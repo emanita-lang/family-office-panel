@@ -90,6 +90,22 @@ header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:1
 .tab.active{color:var(--primary);background:var(--primary-soft)}
 .tab .n{font-family:var(--display);font-size:11px;opacity:.7;margin-left:4px}
 .tab-body{padding:14px 16px 16px}
+/* Телефон: таблицы разделов не помещались по ширине, а правый край просто
+   обрезался — прокрутить его было нельзя, потому что переполнение никто не
+   разрешал. Кнопки поджимаем, а прокрутку оставляем страховкой: даже если
+   содержимое окажется шире, до него можно будет дотянуться. */
+@media(max-width:640px){
+  /* отступы по бокам поджаты: на 375 пикселях каждые 6 пикселей отступа —
+     это 6 пикселей, которых не хватает таблице */
+  .tab-body{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 10px 14px}
+  .tab-body table{font-size:13px}
+  .tab-body th,.tab-body td{padding-right:4px}
+  .rowbtns{gap:3px}
+  .iconbtn{padding:4px 4px;font-size:12.5px}
+  /* значок «открыть график» у заголовка столбца: на телефоне он забирал
+     ширину у самих цифр, а нажатие на заголовок работает и без него */
+  .th-ico{display:none}
+}
 .row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .row-head h3{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.02em}
 table{width:100%;border-collapse:collapse}
@@ -109,7 +125,11 @@ tr:last-child td{border-bottom:none}
 /* превышение цели — просто число, без тревожного цвета */
 .nut-over{color:var(--muted);font-weight:500}
 .mini{font-size:11px;color:var(--muted)}
-.rowbtns{display:flex;gap:6px;justify-content:flex-end}
+/* Кнопки в строке таблицы. Перенос обязателен: в разделе «Врачи» их четыре,
+   и на телефоне этот столбец требовал 231 пиксель при 333 на всю таблицу.
+   Три содержательных столбца укладывались в 247 — то есть правый край
+   обрезался именно из-за кнопок, и прокрутить обрезанное было нельзя. */
+.rowbtns{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .iconbtn{color:var(--muted);font-size:13px;padding:4px 7px;border-radius:7px}
 .iconbtn:hover{background:var(--bg);color:var(--ink)}
 .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:13px}
@@ -997,7 +1017,7 @@ function vitTable(){
       <td>${statusCell}</td>
       <td>${btns}</td></tr>`;}).join("");
   return head("Приём и запас","+ Позиция","openVit()")+
-    `<table><thead><tr><th>Позиция</th><th>Остаток</th><th>Хватит на / заказ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
+    `<table><thead><tr><th>Позиция</th><th>Остаток</th><th>Хватит / заказ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
     `<div class="mini" style="margin-top:10px">Остаток считается автоматически: куплено − суточный приём × дни с начала. Заказанные позиции появятся в отсчёте после кнопки «Получено».</div>`;
 }
 async function markReceived(id){const v=state.vitamins.find(x=>x.id===id);if(!v)return;
@@ -1034,7 +1054,7 @@ function labTable(){
     }
     return html;}).join("");
   return head("Плановые анализы","+ Панель","openLab()")+
-    `<table><thead><tr><th>Панель</th><th>След. сдача</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
+    `<table><thead><tr><th>Панель</th><th>Сдача</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
     `<div class="mini" style="margin-top:10px">Даты сдачи проставлены сегодняшним числом, а интервалы пересдачи — заглушки; поправьте под рекомендации вашего врача. «Показатели» → впишите значения по мере готовности.</div>`;
 }
 async function toggleLabExpand(id){expandedLab=expandedLab===id?null:id;renderTabBody();}
