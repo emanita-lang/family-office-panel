@@ -101,8 +101,13 @@ tr:last-child td{border-bottom:none}
 .status.ok{color:var(--ok)} .status.ok::before{background:var(--ok)}
 .status.warn{color:var(--attn)} .status.warn::before{background:var(--attn)}
 .status.over{color:var(--danger)} .status.over::before{background:var(--danger)}
-.bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;width:74px;margin-top:4px}
+.bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;width:74px;margin-top:4px;position:relative}
 .bar > i{display:block;height:100%;border-radius:4px}
+/* метка цели на полоске: нейтральная засечка, а не цветовая оценка */
+.bar > u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--muted);
+  opacity:.55;text-decoration:none;transform:translateX(-1px)}
+/* превышение цели — просто число, без тревожного цвета */
+.nut-over{color:var(--muted);font-weight:500}
 .mini{font-size:11px;color:var(--muted)}
 .rowbtns{display:flex;gap:6px;justify-content:flex-end}
 .iconbtn{color:var(--muted);font-size:13px;padding:4px 7px;border-radius:7px}
@@ -127,6 +132,54 @@ tr:last-child td{border-bottom:none}
    без пробела между ними */
 .nut-macro-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);font-weight:500;margin-bottom:5px}
 .nut-macro .bar{height:8px}
+/* состав приёма пищи и справочник продуктов */
+.comp-list{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:8px}
+.comp-row{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;
+  padding:7px 10px;font-size:12.5px;border-bottom:1px solid var(--line)}
+.comp-row:last-child{border-bottom:none}
+.comp-name{font-weight:500}
+.comp-qty{font-family:var(--display);color:var(--muted);white-space:nowrap}
+.comp-kbju{font-family:var(--display);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.comp-add{display:grid;grid-template-columns:1fr 78px 24px auto;gap:6px;align-items:center}
+.comp-add select,.comp-add input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;
+  font-family:var(--body);font-size:13px;color:var(--ink);background:var(--bg);width:100%}
+.comp-unit{font-size:12px;color:var(--muted);text-align:center}
+.comp-tools{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.comp-total{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;background:var(--primary-soft);
+  border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:13px;color:var(--primary)}
+.comp-total-label{font-family:var(--display);font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;font-weight:600;opacity:.8}
+.comp-total b{font-family:var(--display)}
+.food-list{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+.food-list>.mini{padding:12px}
+.food-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;
+  padding:8px 11px;border-bottom:1px solid var(--line);font-size:12.5px}
+.food-row:last-child{border-bottom:none}
+.food-row.on{background:var(--primary-soft)}
+.food-name{font-weight:500}
+.food-used{font-family:var(--display);font-size:10.5px;color:var(--muted);margin-left:6px}
+.food-vals{font-family:var(--display);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.food-unit{display:block;font-size:10.5px;opacity:.8}
+.food-form{border-top:1px solid var(--line);padding-top:12px}
+@media(max-width:620px){
+  .comp-add{grid-template-columns:1fr 1fr;grid-auto-rows:auto}
+  .comp-add select{grid-column:1/-1}
+  .comp-row{grid-template-columns:1fr auto;row-gap:2px}
+  .comp-kbju{grid-column:1/-1}
+  .food-row{grid-template-columns:1fr auto;row-gap:2px}
+  .food-vals{grid-column:1/-1;white-space:normal}
+}
+/* среднее за неделю: спокойная строка, без оценок и цветов */
+.nut-avg{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;
+  background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:9px 12px;margin-bottom:14px;font-size:12.5px}
+.nut-avg-label{font-family:var(--display);font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-weight:600}
+.nut-avg-item{font-family:var(--display);font-variant-numeric:tabular-nums}
+.nut-avg-item b{color:var(--muted);font-weight:600;font-size:11px;margin-right:2px}
+.nut-avg-goal{color:var(--muted);font-weight:500}
+.nut-avg-note{color:var(--muted);font-size:11.5px;margin-left:auto}
+@media(max-width:640px){.nut-avg-note{margin-left:0;width:100%}}
 
 /* view nav */
 .views{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--line)}
@@ -391,10 +444,11 @@ tr:last-child td{border-bottom:none}
   </header>
 
     <div class="demo-banner">
-    <b>Демонстрационная версия.</b> Все медицинские данные здесь вымышленные.
-    Панель работает целиком в вашем браузере: что вы введёте — останется
-    только у вас, на сервер не отправляется. Кнопка «Скачать данные» делает
-    файл-копию, «Загрузить» — переносит её на другое устройство.
+    <b>Показаны демонстрационные данные</b> — все медицинские записи здесь
+    вымышленные. Панель работает целиком в вашем браузере: что вы введёте,
+    останется только у вас и на сервер не отправляется. Кнопка «Скачать
+    данные» делает файл-копию, «Загрузить данные» — переносит её на другое
+    устройство. Как только вы загрузите свой файл, этот блок исчезнет.
   </div>
 
   <nav class="views">
@@ -567,6 +621,9 @@ function seed(){
     _migr_demo_fit:true,
   };
 }
+/* Заказ получен 24 июля 2026 — статус «в пути» снят, приём начат с этой даты.
+   Дату заказа оставляем в expected как запись о том, к чему готовились:
+   расчёты её больше не используют, пока нет status:"ordered". */
 function orderIncoming(){const exp=iso(addDays(today,-10));
   const O=(name,dose,perDay,stock)=>({id:u(),name,dose,perDay,stock,reorderDays:perDay?7:0,started:exp,courseMonths:0,status:"ordered",expected:exp});
   return [
@@ -649,11 +706,26 @@ function migrate(){
   if(!state._migr_meds){ medsPurchased().forEach(m=>state.vitamins.push(m)); state._migr_meds=true; ch=true; }
   if(!state._migr_demo){ if(!state.metrics||!state.metrics.length){ state.metrics=DEMO_METRICS.map(x=>({...x})); } state._migr_demo=true; ch=true; }
   if(!state._migr_order){ orderIncoming().forEach(m=>state.vitamins.push(m)); state._migr_order=true; ch=true; }
+  /* Заказ от 21 июля получен 24 июля. У тех, кто уже открывал панель, позиции
+     сохранены со статусом «в пути»: правка функции выше их не касается, потому
+     что миграция _migr_order давно отработала. Поэтому снимаем статус здесь —
+     иначе панель до сих пор показывала бы «просрочено», а остатки не считались
+     бы вовсе (обратный отсчёт для позиций «в пути» намеренно отключён). */
+  if(!state._migr_order_got){
+    state.vitamins.forEach(v=>{
+      if(v.status==="ordered" && v.expected==="2026-07-21"){
+        delete v.status; v.started="2026-07-24"; v.received="2026-07-24"; ch=true;
+      }
+    });
+    state._migr_order_got=true; ch=true;
+  }
   if(!Array.isArray(state.schedule)){ state.schedule=[]; ch=true; }
   if(!state.nutrition||typeof state.nutrition!=="object"){ state.nutrition={targets:{kcal:2200,p:150,f:70,c:220},log:{}}; ch=true; }
   if(!state.nutrition.log){ state.nutrition.log={}; ch=true; }
   if(!state.nutrition.targets){ state.nutrition.targets={kcal:2200,p:150,f:70,c:220}; ch=true; }
   if(!Array.isArray(state.fitnessGoals)){ state.fitnessGoals=[]; ch=true; }
+  /* справочник «мои продукты» — пустой у всех, кто обновился с прежней версии */
+  if(!Array.isArray(state.foods)){ state.foods=[]; ch=true; }
   if(!state.whoop || typeof state.whoop !== "object"){
     // подключение к Whoop потребует серверной части: их авторизация
     // требует секретный ключ, а его нельзя держать в файле,
@@ -1041,7 +1113,7 @@ function metricTable(){
 let metricChartKey="recovery", metricChartDays=30;
 function openMetricChart(k){
   metricChartKey=k||metricChartKey;
-  showChart(renderMetricChart());
+  showWide(renderMetricChart());
 }
 function setMetricChart(k,дней){
   if(k) metricChartKey=k;
@@ -1104,8 +1176,9 @@ async function del(kind,id){if(!confirm("Удалить запись?"))return;
 /* ---------- modal forms ---------- */
 const overlay=document.getElementById("overlay"),modal=document.getElementById("modal");
 function closeModal(){overlay.classList.remove("on");modal.innerHTML="";modal.classList.remove("wide");}
-/* окно с графиком: то же, что show(), но шире — см. .modal.wide */
-function showChart(html){modal.classList.add("wide");show(html);}
+/* широкое окно: для графиков и для форм со списками — см. .modal.wide.
+   Раньше называлось showChart, но теперь его просит и состав приёма пищи. */
+function showWide(html){modal.classList.add("wide");show(html);}
 overlay.addEventListener("click",e=>{if(e.target===overlay)closeModal();});
 function show(html){modal.innerHTML=html;overlay.classList.add("on");}
 const val=id=>document.getElementById(id).value.trim();
@@ -1272,10 +1345,27 @@ function nutDay(){const lg=state.nutrition.log;return lg[selectedDate]||[];}
 function nutTotals(){const t={kcal:0,p:0,f:0,c:0};nutDay().forEach(m=>{t.kcal+=+m.kcal||0;t.p+=+m.p||0;t.f+=+m.f||0;t.c+=+m.c||0;});return t;}
 function nutTable(){
   const tg=state.nutrition.targets,tot=nutTotals(),d=parse(selectedDate);
-  const bar=(val,target,label,unit)=>{const pct=target>0?Math.min(100,(val/target)*100):0;
-    const over=target>0&&val>target;const col=over?"var(--attn)":"var(--primary)";
-    return `<div class="nut-macro"><div class="nut-macro-top"><span>${label}</span><span class="num">${Math.round(val)}${target>0?` / ${target}`:""} ${unit}</span></div>
-      <div class="bar" style="width:100%"><i style="width:${pct}%;background:${col}"></i></div></div>`;};
+  /* Полоска без оценки.
+     Раньше превышение цели красилось в тревожный оранжевый — то есть панель
+     говорила «плохо». По ТЗ она этого делать не должна: цель задаёт человек
+     или его специалист, панель только показывает и считает.
+     Теперь цвет всегда один, а превышение видно двумя способами:
+     числом «+8» и меткой цели на полоске — полоска масштабируется по
+     большему из двух значений, поэтому метка уезжает влево, и это читается
+     как «прошли отметку», а не как «нарушение». */
+  const bar=(val,target,label,unit)=>{
+    const шкала=Math.max(val,target)||1;
+    const заполнено=target>0||val>0 ? (val/шкала)*100 : 0;
+    const меткаЦели=target>0 ? (target/шкала)*100 : null;
+    const превышение=target>0 && val>target ? Math.round(val-target) : 0;
+    return `<div class="nut-macro">
+      <div class="nut-macro-top"><span>${label}</span>
+        <span class="num">${Math.round(val)}${target>0?` из ${target}`:""} ${unit}${
+          превышение?` <span class="nut-over">+${превышение}</span>`:""}</span></div>
+      <div class="bar" style="width:100%">
+        <i style="width:${заполнено.toFixed(1)}%;background:var(--primary)"></i>
+        ${меткаЦели!==null&&меткаЦели<99.5?`<u class="bar-mark" style="left:${меткаЦели.toFixed(1)}%" title="цель ${target} ${unit}"></u>`:""}
+      </div></div>`;};
   const rows=nutDay().map(m=>`<tr><td><b>${esc(m.name||"—")}</b>${m.demo?' <span class="chip ex">пример</span>':""}</td>
     <td class="num">${m.kcal||0}</td><td class="num">${m.p||0}</td><td class="num">${m.f||0}</td><td class="num">${m.c||0}</td>
     <td><div class="rowbtns"><button class="iconbtn" onclick="openMeal('${m.id}')">Изм.</button>
@@ -1283,7 +1373,10 @@ function nutTable(){
   const hasDemo=nutDay().some(m=>m.demo);
   const demoNote=hasDemo?`<div class="demo-note"><b>✳ Пример дневного рациона.</b> Показан для наглядности КБЖУ и прогресса к целям — удалите записи, когда начнёте вести свой день.</div>`:"";
   return `<div class="row-head"><h3>Дневник питания</h3>
-      <div style="display:flex;gap:6px"><button class="btn ghost small" onclick="openTarget()">Цели КБЖУ</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn ghost small" onclick="openFoods()">Мои продукты${
+        (state.foods&&state.foods.length)?` <span class="mini">${state.foods.length}</span>`:""}</button>
+      <button class="btn ghost small" onclick="openTarget()">Цели КБЖУ</button>
       <button class="btn small" onclick="openMeal()">+ Приём пищи</button></div></div>
     <div class="nut-datenav">
       <button class="btn line small" onclick="shiftDay(-1)">←</button>
@@ -1291,6 +1384,7 @@ function nutTable(){
       <button class="btn line small" onclick="shiftDay(1)">→</button>
       <button class="btn line small" onclick="gotoToday()">Сегодня</button></div>
     <div class="nut-macros">${bar(tot.kcal,tg.kcal,"Калории","ккал")}${bar(tot.p,tg.p,"Белки","г")}${bar(tot.f,tg.f,"Жиры","г")}${bar(tot.c,tg.c,"Углеводы","г")}</div>
+    ${nutWeekAverage()}
     ${demoNote}
     ${nutDay().length?`<table><thead><tr><th>Приём пищи</th><th>Ккал</th><th>Б</th><th>Ж</th><th>У</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:empty("Нет записей за день","Добавьте приём пищи — суммы и прогресс к целям посчитаются автоматически.")}
     ${nutChart()}
@@ -1359,8 +1453,46 @@ function nutChart(){
     <div class="mini">Период отсчитывается назад от выбранной даты.${пропуски}</div>
   </div>`;
 }
-function shiftDay(n){selectedDate=iso(addDays(parse(selectedDate),n));renderTabBody();}
-function gotoToday(){selectedDate=iso(today);renderTabBody();}
+/* Среднее за неделю. Считаем ТОЛЬКО по дням, где есть записи: если поделить
+   на 7, а записи велись 3 дня, среднее окажется вдвое ниже настоящего — и
+   человек решит, что недоедает. Поэтому делим на число дней с записями и
+   прямо пишем, сколько их было.
+   Тон нейтральный: показываем среднее и цель рядом, без «мало/много». */
+function nutWeekAverage(){
+  const конец=parse(selectedDate)||today;
+  const сумма={kcal:0,p:0,f:0,c:0};
+  let дней=0;
+  for(let i=0;i<7;i++){
+    const записи=state.nutrition.log[iso(addDays(конец,-i))]||[];
+    if(!записи.length) continue;
+    дней++;
+    записи.forEach(m=>{сумма.kcal+=+m.kcal||0;сумма.p+=+m.p||0;сумма.f+=+m.f||0;сумма.c+=+m.c||0;});
+  }
+  if(!дней) return "";
+  const ср=k=>Math.round(сумма[k]/дней);
+  const tg=state.nutrition.targets;
+  const часть=(k,подпись,ед)=>{
+    const v=ср(k), ц=+tg[k]||0;
+    return `<span class="nut-avg-item"><b>${подпись}</b> ${v}${ц?` <span class="nut-avg-goal">из ${ц}</span>`:""} ${ед}</span>`;
+  };
+  const словоДней=дней===1?"дню":(дней<5?"дням":"дням");
+  return `<div class="nut-avg">
+    <span class="nut-avg-label">В среднем за 7 дней</span>
+    ${часть("kcal","К",  "ккал")}${часть("p","Б","г")}${часть("f","Ж","г")}${часть("c","У","г")}
+    <span class="nut-avg-note">по ${дней} ${словоДней} с записями</span></div>`;
+}
+
+/* Выбранная дата влияет и на дневник питания (вкладки «Формы»), и на счётчики
+   во вкладках обзора. Раньше здесь жёстко вызывалась перерисовка обзора —
+   поэтому стрелки ← → в дневнике питания не работали вовсе: дата в памяти
+   менялась, а на экране оставался прежний день. Теперь перерисовываем тот
+   раздел, который открыт, вместе с его счётчиками. */
+function renderDateDependent(){
+  if(view==="fitness"){ renderFTabs(); renderFTabBody(); }
+  else { renderTabs(); renderTabBody(); }
+}
+function shiftDay(n){selectedDate=iso(addDays(parse(selectedDate),n));renderDateDependent();}
+function gotoToday(){selectedDate=iso(today);renderDateDependent();}
 function openTarget(){const t=state.nutrition.targets;show(`<div class="modal-head"><h3>Цели КБЖУ (в день)</h3></div>
   <div class="modal-body">
     <div class="field two"><div><label>Калории (ккал)</label><input id="t_kcal" type="number" value="${t.kcal}"></div>
@@ -1370,22 +1502,283 @@ function openTarget(){const t=state.nutrition.targets;show(`<div class="modal-he
     <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
       <button class="btn" onclick="saveTarget()">Сохранить</button></div></div>`);}
 async function saveTarget(){state.nutrition.targets={kcal:numv("t_kcal"),p:numv("t_p"),f:numv("t_f"),c:numv("t_c")};await done();}
-function openMeal(id){const e=id?nutDay().find(x=>x.id===id)||{}:{};
-  show(`<div class="modal-head"><h3>${id?"Изменить":"Новый"} приём пищи</h3></div>
+/* ---------- мои продукты ----------
+
+   Смысл: люди едят одни и те же тридцать продуктов. Достаточно один раз
+   внести творог и яйца, чтобы дальше дневник заполнялся выбором продукта
+   и количества, а КБЖУ считала панель.
+
+   Единицы. Для весовых продуктов значения хранятся НА 100 Г — так пишут
+   на упаковке. Для штучных (яйцо, банан) — за одну штуку, потому что
+   взвешивать яйцо никто не станет.
+
+   Откуда числа. Их вносит человек — с упаковки или из справочника. Панель
+   ничего не додумывает: поле «источник» пишется прямо в продукт, чтобы
+   потом было видно, откуда взялась цифра. */
+
+function foodsSorted(){
+  return (state.foods||[]).slice().sort((a,b)=>
+    (b.used||0)-(a.used||0) || a.name.localeCompare(b.name,"ru"));
+}
+function foodById(id){ return (state.foods||[]).find(f=>f.id===id); }
+
+/* КБЖУ порции. Для весовых — доля от 100 г, для штучных — множитель. */
+function foodPortion(food, кол){
+  const к = food.unit==="pcs" ? (+кол||0) : (+кол||0)/100;
+  const ч = v => Math.round(((+v||0)*к)*10)/10;
+  return {kcal:Math.round((+food.kcal||0)*к), p:ч(food.p), f:ч(food.f), c:ч(food.c)};
+}
+function foodUnitLabel(food){ return food && food.unit==="pcs" ? "шт" : "г"; }
+
+/* ---------- состав приёма пищи ---------- */
+
+let mealDraft = null;   /* черновик открытой формы: имя и состав */
+
+function составИтог(состав){
+  const t={kcal:0,p:0,f:0,c:0};
+  (состав||[]).forEach(с=>{t.kcal+=+с.kcal||0;t.p+=+с.p||0;t.f+=+с.f||0;t.c+=+с.c||0;});
+  return {kcal:Math.round(t.kcal),p:Math.round(t.p*10)/10,
+          f:Math.round(t.f*10)/10,c:Math.round(t.c*10)/10};
+}
+
+function openMeal(id){
+  const e = id ? (nutDay().find(x=>x.id===id)||{}) : {};
+  mealDraft = {
+    id: id||"",
+    name: e.name||"",
+    состав: Array.isArray(e.состав) ? e.состав.map(x=>({...x})) : [],
+    kcal: e.kcal??"", p: e.p??"", f: e.f??"", c: e.c??""
+  };
+  showWide(renderMealModal());
+}
+
+/* Перед любой перерисовкой формы забираем то, что человек уже набрал,
+   иначе введённое название пропадёт при добавлении продукта. */
+function собратьЧерновик(){
+  if(!mealDraft) return;
+  const имя=document.getElementById("ml_name");
+  if(имя) mealDraft.name=имя.value;
+  if(!mealDraft.состав.length){
+    ["kcal","p","f","c"].forEach(k=>{
+      const el=document.getElementById("ml_"+k);
+      if(el) mealDraft[k]=el.value;
+    });
+  }
+}
+function перерисоватьФорму(){ document.getElementById("modal").innerHTML=renderMealModal(); }
+
+function добавитьВСостав(){
+  собратьЧерновик();
+  const id=document.getElementById("ml_food").value;
+  const кол=parseFloat(document.getElementById("ml_qty").value);
+  const продукт=foodById(id);
+  if(!продукт){ alert("Выберите продукт из списка."); return; }
+  if(!(кол>0)){ alert("Укажите количество больше нуля."); return; }
+  const порция=foodPortion(продукт,кол);
+  mealDraft.состав.push({foodId:продукт.id, имя:продукт.name,
+    кол:кол, ед:foodUnitLabel(продукт), ...порция});
+  перерисоватьФорму();
+}
+function убратьИзСостава(i){
+  собратьЧерновик();
+  mealDraft.состав.splice(i,1);
+  перерисоватьФорму();
+}
+function очиститьСостав(){
+  собратьЧерновик();
+  const т=составИтог(mealDraft.состав);
+  mealDraft.состав=[];
+  /* переносим посчитанное в поля, чтобы работа не пропала */
+  mealDraft.kcal=т.kcal||""; mealDraft.p=т.p||""; mealDraft.f=т.f||""; mealDraft.c=т.c||"";
+  перерисоватьФорму();
+}
+function обновитьЕдиницу(){
+  const продукт=foodById(document.getElementById("ml_food").value);
+  const el=document.getElementById("ml_unit");
+  if(el) el.textContent=продукт?foodUnitLabel(продукт):"—";
+}
+
+function renderMealModal(){
+  const д=mealDraft, продукты=foodsSorted(), поСоставу=д.состав.length>0;
+  const итог=составИтог(д.состав);
+
+  const строки=д.состав.map((с,i)=>`<div class="comp-row">
+    <span class="comp-name">${esc(с.имя)}</span>
+    <span class="comp-qty">${с.кол} ${esc(с.ед)}</span>
+    <span class="comp-kbju">${с.kcal} ккал · ${с.p} / ${с.f} / ${с.c}</span>
+    <button class="iconbtn" onclick="убратьИзСостава(${i})">Удал.</button></div>`).join("");
+
+  const списокПродуктов=продукты.length
+    ? `<select id="ml_food" onchange="обновитьЕдиницу()">
+         <option value="">— выберите продукт —</option>
+         ${продукты.map(f=>`<option value="${f.id}">${esc(f.name)} · ${f.kcal} ккал ${
+           f.unit==="pcs"?"за шт":"на 100 г"}</option>`).join("")}
+       </select>`
+    : `<div class="hint" style="margin:0">Список продуктов пуст. Нажмите «Мои продукты» и внесите то, что едите чаще всего — дальше приёмы пищи будут собираться выбором.</div>`;
+
+  return `<div class="modal-head"><h3>${д.id?"Изменить":"Новый"} приём пищи</h3></div>
   <div class="modal-body">
-    <div class="field"><label>Название</label><input id="ml_name" value="${esc(e.name||"")}" placeholder="Завтрак: овсянка, яйца"></div>
-    <div class="field two"><div><label>Калории</label><input id="ml_kcal" type="number" value="${e.kcal??""}"></div>
-      <div><label>Белки (г)</label><input id="ml_p" type="number" value="${e.p??""}"></div></div>
-    <div class="field two"><div><label>Жиры (г)</label><input id="ml_f" type="number" value="${e.f??""}"></div>
-      <div><label>Углеводы (г)</label><input id="ml_c" type="number" value="${e.c??""}"></div></div>
+    <div class="field"><label>Название</label>
+      <input id="ml_name" value="${esc(д.name)}" placeholder="Завтрак"></div>
+
+    <div class="field">
+      <label>Состав ${поСоставу?`<span class="mini">— КБЖУ считается по нему</span>`:""}</label>
+      ${поСоставу?`<div class="comp-list">${строки}</div>`:""}
+      ${продукты.length?`<div class="comp-add">
+        ${списокПродуктов}
+        <input id="ml_qty" type="number" step="any" min="0" placeholder="кол-во">
+        <span class="comp-unit" id="ml_unit">—</span>
+        <button class="btn small" onclick="добавитьВСостав()">+ Добавить</button>
+      </div>`:списокПродуктов}
+      <div class="comp-tools">
+        <button class="btn ghost small" onclick="openFoods()">Мои продукты</button>
+        ${поСоставу?`<button class="btn ghost small" onclick="очиститьСостав()">Ввести вручную</button>`:""}
+      </div>
+    </div>
+
+    ${поСоставу
+      ? `<div class="comp-total">
+           <span class="comp-total-label">Итого</span>
+           <span><b>${итог.kcal}</b> ккал</span>
+           <span>Б <b>${итог.p}</b></span>
+           <span>Ж <b>${итог.f}</b></span>
+           <span>У <b>${итог.c}</b></span></div>`
+      : `<div class="field two"><div><label>Калории</label><input id="ml_kcal" type="number" value="${д.kcal}"></div>
+           <div><label>Белки (г)</label><input id="ml_p" type="number" value="${д.p}"></div></div>
+         <div class="field two"><div><label>Жиры (г)</label><input id="ml_f" type="number" value="${д.f}"></div>
+           <div><label>Углеводы (г)</label><input id="ml_c" type="number" value="${д.c}"></div></div>`}
+
     <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
-      <button class="btn" onclick="saveMeal('${id||""}')">Сохранить</button></div></div>`);}
-async function saveMeal(id){if(!state.nutrition.log[selectedDate])state.nutrition.log[selectedDate]=[];
+      <button class="btn" onclick="saveMeal('${д.id}')">Сохранить</button></div></div>`;
+}
+
+async function saveMeal(id){
+  собратьЧерновик();
+  if(!state.nutrition.log[selectedDate]) state.nutrition.log[selectedDate]=[];
   const list=state.nutrition.log[selectedDate];
-  const o={id:id||u(),name:val("ml_name")||"Приём пищи",kcal:numv("ml_kcal"),p:numv("ml_p"),f:numv("ml_f"),c:numv("ml_c")};
-  const i=list.findIndex(x=>x.id===id);if(i>=0)list[i]=o;else list.push(o);await done();}
+  const поСоставу=mealDraft.состав.length>0;
+  const т=поСоставу?составИтог(mealDraft.состав)
+    :{kcal:+mealDraft.kcal||0,p:+mealDraft.p||0,f:+mealDraft.f||0,c:+mealDraft.c||0};
+
+  /* имя не придумываем: если человек его не ввёл, собираем из состава */
+  let имя=(mealDraft.name||"").trim();
+  if(!имя) имя=поСоставу?mealDraft.состав.map(с=>с.имя).join(", "):"Приём пищи";
+
+  const o={id:id||u(),name:имя,kcal:т.kcal,p:т.p,f:т.f,c:т.c};
+  if(поСоставу) o.состав=mealDraft.состав;
+
+  const i=list.findIndex(x=>x.id===id);
+  if(i>=0) list[i]=o; else list.push(o);
+
+  /* часто используемые продукты поднимаются в начало списка */
+  if(поСоставу) mealDraft.состав.forEach(с=>{
+    const f=foodById(с.foodId); if(f) f.used=(f.used||0)+1;
+  });
+
+  mealDraft=null;
+  await done();
+}
 async function delMeal(id){const list=state.nutrition.log[selectedDate];if(!list)return;
   state.nutrition.log[selectedDate]=list.filter(x=>x.id!==id);await done();}
+
+/* ---------- окно «Мои продукты» ---------- */
+
+let foodEditId=null;
+
+function openFoods(){ foodEditId=null; showWide(renderFoods()); }
+function перерисоватьПродукты(){ document.getElementById("modal").innerHTML=renderFoods(); }
+
+function renderFoods(){
+  const список=foodsSorted();
+  const е=foodEditId?foodById(foodEditId):null;
+  const шт=е?е.unit==="pcs":false;
+
+  const строки=список.length?список.map(f=>`<div class="food-row${f.id===foodEditId?" on":""}">
+      <span class="food-name">${esc(f.name)}${f.used?`<span class="food-used">${f.used}×</span>`:""}</span>
+      <span class="food-vals">${f.kcal} ккал · Б${f.p} Ж${f.f} У${f.c}
+        <span class="food-unit">${f.unit==="pcs"?`за шт${f.grams?` (~${f.grams} г)`:""}`:"на 100 г"}</span></span>
+      <span class="food-btns">
+        <button class="iconbtn" onclick="правитьПродукт('${f.id}')">Изм.</button>
+        <button class="iconbtn" onclick="удалитьПродукт('${f.id}')">Удал.</button></span>
+    </div>`).join("")
+    : `<div class="mini">Пока ничего нет. Внесите продукты, которые едите чаще всего.</div>`;
+
+  return `<div class="modal-head"><h3>Мои продукты</h3></div>
+  <div class="modal-body">
+    <div class="food-list">${строки}</div>
+
+    <div class="food-form">
+      <div class="field"><label>${е?"Изменить продукт":"Новый продукт"}</label>
+        <input id="fd_name" value="${е?esc(е.name):""}" placeholder="Творог 2%"></div>
+      <div class="field two">
+        <div><label>Единица</label>
+          <select id="fd_unit" onchange="переключитьЕдиницуПродукта()">
+            <option value="g"${!шт?" selected":""}>значения на 100 г</option>
+            <option value="pcs"${шт?" selected":""}>значения за 1 штуку</option>
+          </select></div>
+        <div id="fd_grams_wrap" style="${шт?"":"display:none"}">
+          <label>Вес штуки (г, необязательно)</label>
+          <input id="fd_grams" type="number" step="any" min="0" value="${е&&е.grams?е.grams:""}"></div>
+      </div>
+      <div class="field two"><div><label>Калории</label><input id="fd_kcal" type="number" step="any" value="${е?е.kcal:""}"></div>
+        <div><label>Белки (г)</label><input id="fd_p" type="number" step="any" value="${е?е.p:""}"></div></div>
+      <div class="field two"><div><label>Жиры (г)</label><input id="fd_f" type="number" step="any" value="${е?е.f:""}"></div>
+        <div><label>Углеводы (г)</label><input id="fd_c" type="number" step="any" value="${е?е.c:""}"></div></div>
+      <div class="field"><label>Откуда значения</label>
+        <input id="fd_src" value="${е?esc(е.source||""):""}" placeholder="с упаковки"></div>
+      <div class="hint">Берите числа с упаковки или из справочника. Панель их не придумывает и не проверяет — поле «откуда» нужно, чтобы через месяц было понятно, чему верить.</div>
+      <div class="modal-foot">
+        ${е?`<button class="btn line" onclick="foodEditId=null;перерисоватьПродукты()">Отменить правку</button>`:""}
+        <button class="btn line" onclick="closeModal()">Закрыть</button>
+        <button class="btn" onclick="сохранитьПродукт()">${е?"Сохранить":"Добавить"}</button></div>
+    </div></div>`;
+}
+
+function переключитьЕдиницуПродукта(){
+  const шт=document.getElementById("fd_unit").value==="pcs";
+  document.getElementById("fd_grams_wrap").style.display=шт?"":"none";
+}
+function правитьПродукт(id){ foodEditId=id; перерисоватьПродукты(); }
+
+async function удалитьПродукт(id){
+  const f=foodById(id);
+  if(!f) return;
+  /* уже съеденное не пересчитываем: в записях лежат посчитанные числа,
+     поэтому удаление продукта не меняет историю дневника */
+  if(!confirm(`Удалить «${f.name}» из списка продуктов?\n\nЗаписи в дневнике останутся как есть — в них уже посчитанные значения.`)) return;
+  state.foods=state.foods.filter(x=>x.id!==id);
+  if(foodEditId===id) foodEditId=null;
+  await save();
+  перерисоватьПродукты();
+}
+
+async function сохранитьПродукт(){
+  const имя=val("fd_name");
+  if(!имя){ alert("Укажите название продукта."); return; }
+  const ед=document.getElementById("fd_unit").value==="pcs"?"pcs":"g";
+  const ккал=parseFloat(document.getElementById("fd_kcal").value);
+  if(!(ккал>=0)){ alert("Укажите калорийность."); return; }
+  const чис=id=>{const v=parseFloat(document.getElementById(id).value);return isNaN(v)?0:v;};
+
+  const продукт={
+    id: foodEditId||u(),
+    name: имя, unit: ед,
+    kcal: ккал, p: чис("fd_p"), f: чис("fd_f"), c: чис("fd_c"),
+    grams: ед==="pcs" ? (чис("fd_grams")||null) : null,
+    source: val("fd_src")||"внесено вручную",
+    used: foodEditId ? (foodById(foodEditId).used||0) : 0
+  };
+
+  if(foodEditId){
+    const i=state.foods.findIndex(x=>x.id===foodEditId);
+    if(i>=0) state.foods[i]=продукт;
+    foodEditId=null;
+  } else {
+    state.foods.push(продукт);
+  }
+  await save();
+  перерисоватьПродукты();
+}
 
 /* ---------- fitness goals (weekly / monthly) ---------- */
 function goalsColumn(period,title){
@@ -2057,7 +2450,7 @@ function openDynamics(labId, индекс){
       (${fmt(parse(стало.дата))}): ${знак}${округлить(разница)}${c.unit ? " " + esc(c.unit) : ""}.</div>`;
   }
 
-  showChart(`<div class="modal-head"><h3>${esc(c.name || "Показатель")}</h3></div>
+  showWide(`<div class="modal-head"><h3>${esc(c.name || "Показатель")}</h3></div>
   <div class="modal-body">
     <div class="mini" style="margin-bottom:10px">${esc(lab.name)}${
       c.ref ? ` · норма ${esc(c.ref)}` : " · норма не задана"}${
@@ -3033,6 +3426,11 @@ async function importData(input){
       `Текущие данные будут перезаписаны. Если они нужны — сначала нажмите «Скачать данные».`)) return;
 
   state = incoming;
+  /* Признак «данные свои, а не демонстрационные».
+     Нужен размещённой версии: она собирается из демонстрационной сборки и
+     несёт баннер «все медицинские данные здесь вымышленные». После загрузки
+     своего файла этот баннер стал бы неправдой — поэтому он скрывается. */
+  state.свои = true;
   migrate();
   await save();
   selectedDate = iso(today);
@@ -3072,9 +3470,18 @@ function renderStorageNote(){
 /* ---------- render all ---------- */
 function renderAll(){
   renderDayStatus();
+  renderDemoBanner();
   renderStorageNote();
   if(view==="overview"){renderAttention();renderMetrics();renderCalendar();renderTabs();renderTabBody();}
   else{renderGoals();renderFTabs();renderFTabBody();}
+}
+/* Баннер про демонстрационные данные есть только в публичной сборке — его
+   вставляет собиратель. В личной версии его нет, поэтому молча выходим.
+   Как только человек загрузил свой файл, баннер перестаёт быть правдой. */
+function renderDemoBanner(){
+  const el=document.querySelector(".demo-banner");
+  if(!el) return;
+  el.style.display = (state && state.свои) ? "none" : "";
 }
 function renderDayStatus(){const el=document.getElementById("daystat");if(!el)return;
   const s=dayStatus(today);el.textContent=s?`статус: ${s}`:"";}
