@@ -105,6 +105,50 @@ header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:1
   /* значок «открыть график» у заголовка столбца: на телефоне он забирал
      ширину у самих цифр, а нажатие на заголовок работает и без него */
   .th-ico{display:none}
+
+  /* ---------- таблицы становятся карточками ----------
+
+     Четыре столбца и кнопки не умещаются в 375 пикселей, и ширину задаёт
+     само содержимое — названия препаратов и панелей анализов. Прокрутка
+     вбок это прятала, а не решала: правый край всё равно нужно искать
+     пальцем. Поэтому строка превращается в карточку — подпись столбца
+     берётся из data-label и встаёт рядом со значением, кнопки уходят вниз.
+     Горизонтальная прокрутка исчезает совсем. */
+  table.cards{display:block}
+  table.cards thead{display:none}
+  table.cards tbody{display:block}
+  table.cards tr{display:block;background:var(--surface);border:1px solid var(--line);
+    border-radius:11px;padding:9px 11px;margin-bottom:8px}
+  table.cards td{display:flex;gap:10px;align-items:baseline;justify-content:space-between;
+    border:none;padding:3px 0;width:auto;text-align:left}
+  table.cards td::before{content:attr(data-label);flex:0 0 auto;color:var(--muted);
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+  table.cards td:not([data-label])::before{content:none}
+  /* название — во всю ширину карточки и без подписи */
+  table.cards td.title{display:block;padding:0 0 5px}
+  table.cards td.title::before{content:none}
+  /* кнопки — отдельной полосой снизу */
+  table.cards td.acts{justify-content:flex-end;border-top:1px solid var(--line);
+    margin-top:6px;padding-top:7px}
+  table.cards td.acts::before{content:none}
+  table.cards td.acts .rowbtns{justify-content:flex-end;width:100%}
+  /* раскрытая часть (заключение врача, состав анализа) — на всю карточку */
+  table.cards tr.compwrap{padding:0;border:none;background:none}
+  table.cards tr.compwrap td{display:block;padding:0}
+  table.cards tr.compwrap td::before{content:none}
+
+  /* вложенная таблица показателей анализа — тоже карточками, иначе четыре
+     поля ввода в ряд превращаются в нечитаемые полоски */
+  .comp-table{display:block}
+  .comp-table thead{display:none}
+  .comp-table tbody{display:block}
+  .comp-table tr{display:block;padding:7px 0;border-bottom:1px solid var(--line)}
+  .comp-table tr:last-child{border-bottom:none}
+  .comp-table td{display:flex;gap:8px;align-items:center;border:none;padding:2px 0}
+  .comp-table td::before{content:attr(data-label);flex:0 0 74px;color:var(--muted);
+    font-size:11px;font-weight:600}
+  .comp-table td:not([data-label])::before{content:none}
+  .comp-table td .cin{flex:1;min-width:0}
 }
 .row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .row-head h3{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.02em}
@@ -1012,12 +1056,12 @@ function vitTable(){
       remCell=`${Math.round(rem)} <span class="mini">из ${v.stock}</span>`;btns=rowbtns("vitamins",v.id);
     }
     const sub=`${v.dose||""}${!ordered&&v.perDay>0?` · ${v.perDay}/день`:""}${ce?` · курс до ${fmt(ce)}`:(!ordered&&v.courseMonths===0&&v.started)?" · длительно":""}`;
-    return `<tr${ordered?' style="opacity:.82"':''}><td><b>${v.name}</b><div class="mini">${sub}</div></td>
-      <td class="num">${remCell}</td>
-      <td>${statusCell}</td>
-      <td>${btns}</td></tr>`;}).join("");
+    return `<tr${ordered?' style="opacity:.82"':''}><td class="title"><b>${v.name}</b><div class="mini">${sub}</div></td>
+      <td class="num" data-label="Остаток">${remCell}</td>
+      <td data-label="Хватит / заказ">${statusCell}</td>
+      <td class="acts">${btns}</td></tr>`;}).join("");
   return head("Приём и запас","+ Позиция","openVit()")+
-    `<table><thead><tr><th>Позиция</th><th>Остаток</th><th>Хватит / заказ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
+    `<table class="cards"><thead><tr><th>Позиция</th><th>Остаток</th><th>Хватит / заказ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
     `<div class="mini" style="margin-top:10px">Остаток считается автоматически: куплено − суточный приём × дни с начала. Заказанные позиции появятся в отсчёте после кнопки «Получено».</div>`;
 }
 async function markReceived(id){const v=state.vitamins.find(x=>x.id===id);if(!v)return;
@@ -1028,10 +1072,10 @@ function labTable(){
     const comps=l.components||[];const total=comps.length;
     const filled=comps.filter(c=>c.value&&c.value!=="").length;
     const open=expandedLab===l.id;
-    let html=`<tr><td><b>${l.name}</b><div class="mini">раз в ${l.everyMonths} мес. · посл. ${fmt(parse(l.last))}${total?` · показателей ${total}${filled?` · значений ${filled}/${total}`:""}`:""}</div></td>
-      <td class="num">${fmt(nx)}</td>
-      <td><span class="status ${st}">${relLabel(nx).t}</span></td>
-      <td><div class="rowbtns">
+    let html=`<tr><td class="title"><b>${l.name}</b><div class="mini">раз в ${l.everyMonths} мес. · посл. ${fmt(parse(l.last))}${total?` · показателей ${total}${filled?` · значений ${filled}/${total}`:""}`:""}</div></td>
+      <td class="num" data-label="Сдача">${fmt(nx)}</td>
+      <td data-label="Статус"><span class="status ${st}">${relLabel(nx).t}</span></td>
+      <td class="acts"><div class="rowbtns">
         <button class="iconbtn" onclick="toggleLabExpand('${l.id}')">${open?"Скрыть":"Показатели"}</button>
         <button class="iconbtn" onclick="edit('labs','${l.id}')">Изм.</button>
         <button class="iconbtn" onclick="del('labs','${l.id}')">Удал.</button></div></td></tr>`;
@@ -1042,10 +1086,10 @@ function labTable(){
         const badge=dv&&dv.dir!=="ok"
           ?`<span class="dev ${dv.dir}" title="выход за границу нормы">${dv.dir==="low"?"↓":"↑"} ${dv.by}</span>`:"";
         return `<tr class="comp${cls}">
-        <td><input class="cin nm" value="${(c.name||"").replace(/"/g,'&quot;')}" placeholder="показатель" onchange="setComp('${l.id}',${i},'name',this.value)"></td>
-        <td><input class="cin v" value="${(c.value||"").replace(/"/g,'&quot;')}" placeholder="значение" onchange="setComp('${l.id}',${i},'value',this.value)">${badge}</td>
-        <td><input class="cin u" value="${(c.unit||"").replace(/"/g,'&quot;')}" placeholder="ед." onchange="setComp('${l.id}',${i},'unit',this.value)"></td>
-        <td><input class="cin r" value="${(c.ref||"").replace(/"/g,'&quot;')}" placeholder="норма" onchange="setComp('${l.id}',${i},'ref',this.value)"><button class="iconbtn" onclick="openDynamics('${l.id}',${i})" title="Динамика замеров">⇗ ${историяПоказателя(c).length||""}</button><button class="iconbtn" onclick="delComp('${l.id}',${i})">✕</button></td></tr>`;}).join("");
+        <td data-label="Показатель"><input class="cin nm" value="${(c.name||"").replace(/"/g,'&quot;')}" placeholder="показатель" onchange="setComp('${l.id}',${i},'name',this.value)"></td>
+        <td data-label="Значение"><input class="cin v" value="${(c.value||"").replace(/"/g,'&quot;')}" placeholder="значение" onchange="setComp('${l.id}',${i},'value',this.value)">${badge}</td>
+        <td data-label="Ед."><input class="cin u" value="${(c.unit||"").replace(/"/g,'&quot;')}" placeholder="ед." onchange="setComp('${l.id}',${i},'unit',this.value)"></td>
+        <td data-label="Норма"><input class="cin r" value="${(c.ref||"").replace(/"/g,'&quot;')}" placeholder="норма" onchange="setComp('${l.id}',${i},'ref',this.value)"><button class="iconbtn" onclick="openDynamics('${l.id}',${i})" title="Динамика замеров">⇗ ${историяПоказателя(c).length||""}</button><button class="iconbtn" onclick="delComp('${l.id}',${i})">✕</button></td></tr>`;}).join("");
       html+=`<tr class="compwrap"><td colspan="4" style="padding:0 0 4px">
         <div class="comp-box"><table class="comp-table">
           <thead><tr><th>Показатель</th><th>Значение</th><th>Ед.</th><th>Норма</th></tr></thead>
@@ -1054,7 +1098,7 @@ function labTable(){
     }
     return html;}).join("");
   return head("Плановые анализы","+ Панель","openLab()")+
-    `<table><thead><tr><th>Панель</th><th>Сдача</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
+    `<table class="cards"><thead><tr><th>Панель</th><th>Сдача</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
     `<div class="mini" style="margin-top:10px">Даты сдачи проставлены сегодняшним числом, а интервалы пересдачи — заглушки; поправьте под рекомендации вашего врача. «Показатели» → впишите значения по мере готовности.</div>`;
 }
 async function toggleLabExpand(id){expandedLab=expandedLab===id?null:id;renderTabBody();}
@@ -1080,10 +1124,10 @@ function docTable(){
   const rows=state.doctors.slice().sort((a,b)=>(a.date<b.date?-1:1)).map(d=>{const dt=parse(d.date);
     const st=d.done?"ok":dt&&daysBetween(dt,today)<0?"over":"warn";
     const open=expandedDoc===d.id;
-    let html=`<tr><td><b>${d.spec}</b><div class="mini">${d.who&&d.who!=="—"?d.who:"врач не указан"}${d.result?" · есть результат":""}</div></td>
-      <td class="num">${fmt(dt)}</td>
-      <td><span class="status ${st}">${d.done?"выполнен":relLabel(dt).t}</span></td>
-      <td><div class="rowbtns">
+    let html=`<tr><td class="title"><b>${d.spec}</b><div class="mini">${d.who&&d.who!=="—"?d.who:"врач не указан"}${d.result?" · есть результат":""}</div></td>
+      <td class="num" data-label="Дата">${fmt(dt)}</td>
+      <td data-label="Статус"><span class="status ${st}">${d.done?"выполнен":relLabel(dt).t}</span></td>
+      <td class="acts"><div class="rowbtns">
         ${d.result?`<button class="iconbtn" onclick="toggleDocExpand('${d.id}')">${open?"Скрыть":"Результат"}</button>`:""}
         <button class="iconbtn" onclick="toggleDoc('${d.id}')">${d.done?"↺":"✓"}</button>
         <button class="iconbtn" onclick="edit('doctors','${d.id}')">Изм.</button>
@@ -1093,7 +1137,7 @@ function docTable(){
     }
     return html;}).join("");
   return head("Визиты к врачам","+ Визит","openDoc()")+
-    `<table><thead><tr><th>Специалист</th><th>Дата</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    `<table class="cards"><thead><tr><th>Специалист</th><th>Дата</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 async function toggleDocExpand(id){expandedDoc=expandedDoc===id?null:id;renderTabBody();}
 function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
@@ -1112,15 +1156,15 @@ function wrkTable(){
 }
 function metricTable(){
   const m=state.metrics.slice().sort((a,b)=>b.date<a.date?-1:1);
-  const rows=m.map((x,i)=>`<tr><td class="num">${fmt(parse(x.date))}</td>
-    <td class="num">${x.recovery??"—"}%</td><td class="num">${x.hrv??"—"}</td><td class="num">${x.rhr??"—"}</td>
-    <td class="num">${x.sleep??"—"} ч</td><td class="num">${x.strain??"—"}</td>
-    <td><button class="iconbtn" onclick="delMetric(${i})">Удал.</button></td></tr>`).join("");
+  const rows=m.map((x,i)=>`<tr><td class="num" data-label="Дата">${fmt(parse(x.date))}</td>
+    <td class="num" data-label="Recovery">${x.recovery??"—"}%</td><td class="num" data-label="HRV">${x.hrv??"—"}</td><td class="num" data-label="Пульс покоя">${x.rhr??"—"}</td>
+    <td class="num" data-label="Сон">${x.sleep??"—"} ч</td><td class="num" data-label="Strain">${x.strain??"—"}</td>
+    <td class="acts"><button class="iconbtn" onclick="delMetric(${i})">Удал.</button></td></tr>`).join("");
   return `<div class="row-head"><h3>Параметры (Whoop)</h3>
       <div style="display:flex;gap:6px"><button class="btn small" onclick="openMetric()">+ Запись</button>
       <button class="btn ghost small" onclick="openImport()">Импорт CSV</button></div></div>
     <div class="hint">Whoop не подключается напрямую — нужен сервер с секретным ключом (кнопка «Как подключить» на обзоре). Рабочая схема: экспорт из приложения Whoop → «Импорт CSV», либо ручная запись.</div>
-    ${m.length?`<table><thead><tr><th>Дата</th>
+    ${m.length?`<table class="cards"><thead><tr><th>Дата</th>
         ${METRIC_DEFS.map(d=>`<th class="th-chart" onclick="openMetricChart('${d.k}')"
           title="Динамика: ${esc(d.lbl)}">${esc(d.lbl)} <span class="th-ico">◲</span></th>`).join("")}
         <th></th></tr></thead><tbody>${rows}</tbody></table>
