@@ -250,6 +250,38 @@ tr:last-child td{border-bottom:none}
 .viewbtn{padding:10px 16px;font-family:var(--display);font-size:14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
 .viewbtn.active{color:var(--primary);border-bottom-color:var(--primary)}
 
+/* приём сегодня — первый блок обзора, единственное ежедневное действие */
+.intake{margin-bottom:18px}
+.intake .panel-head h2{font-size:15px}
+.intake-total{font-family:var(--display);font-size:13px;font-weight:600;color:var(--muted)}
+.intake-total.done{color:var(--ok)}
+.intake-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.intake-row:last-of-type{border-bottom:none}
+.intake-name{flex:1;font-size:13.5px;font-weight:500;min-width:0}
+.intake-dots{display:flex;gap:6px;flex:0 0 auto}
+/* точка приёма: крупная нарочно — по ней попадают пальцем на телефоне */
+.dose{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);
+  background:var(--bg);padding:0;flex:0 0 auto;transition:background .12s,border-color .12s}
+.dose:hover{border-color:var(--primary)}
+.dose.on{background:var(--primary);border-color:var(--primary)}
+.intake-count{font-family:var(--display);font-size:12.5px;color:var(--muted);
+  flex:0 0 44px;text-align:right}
+/* одна отметка для позиций, которые меряют не дозами, а граммами */
+.dose-one{flex:0 0 auto;padding:6px 13px;border-radius:99px;border:2px solid var(--line);
+  background:var(--bg);font-family:var(--body);font-size:12.5px;color:var(--muted);font-weight:600}
+.dose-one:hover{border-color:var(--primary);color:var(--primary)}
+.dose-one.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.intake-name .mini{display:block;font-weight:400}
+@media(max-width:520px){
+  .intake-name{flex:1 1 100%;order:1}
+  .intake-row{flex-wrap:wrap;gap:6px 10px}
+  .intake-dots{order:2}
+  /* порядок нужен и одиночной отметке: без него она вставала ПЕРЕД
+     названием, потому что по умолчанию порядок равен нулю */
+  .dose-one{order:2}
+  .intake-count{order:3;margin-left:auto;flex:0 0 auto}
+}
+
 /* longevity — научная лента внизу обзора.
    Оформление сдержанное: это фон для чтения, а не ваши показатели. */
 .longevity{margin-top:18px}
@@ -521,6 +553,10 @@ tr:last-child td{border-bottom:none}
   </nav>
 
   <div id="view-overview">
+    <!-- Приём на сегодня. Стоит первым: это единственное, что нужно сделать
+         в панели ежедневно, и ради этого её открывают. -->
+    <section id="intake"></section>
+
     <section class="attention">
       <div class="attn-head"><span class="dot"></span><h2>Требует внимания</h2><span class="count" id="attnCount"></span></div>
       <div class="attn-grid" id="attnGrid"></div>
@@ -790,6 +826,12 @@ function migrate(){
   if(!Array.isArray(state.fitnessGoals)){ state.fitnessGoals=[]; ch=true; }
   /* справочник «мои продукты» — пустой у всех, кто обновился с прежней версии */
   if(!Array.isArray(state.foods)){ state.foods=[]; ch=true; }
+  /* отметки приёма по дням. intakeFrom намеренно не заполняем: он появится
+     в день первой отметки, и до этого дня остаток считается по плану, как
+     раньше. Поставить его сегодня задним числом значило бы объявить, что
+     весь прошлый месяц человек ничего не принимал. */
+  if(!state.intake || typeof state.intake!=="object"){ state.intake={}; ch=true; }
+  if(state.intakeFrom===undefined){ state.intakeFrom=null; ch=true; }
   if(!state.whoop || typeof state.whoop !== "object"){
     // подключение к Whoop потребует серверной части: их авторизация
     // требует секретный ключ, а его нельзя держать в файле,
@@ -815,6 +857,36 @@ async function resetAll(){
 }
 
 /* ---------- computed / attention ---------- */
+/* ---------- отметки приёма ----------
+
+   Зачем. Раньше остаток считался по формуле «куплено минус дни с начала
+   приёма, умноженные на приём в день». То есть панель ДОПУСКАЛА, что человек
+   принимает всё по плану каждый день. Пропустил три дня — панель об этом не
+   знает и показывает остаток меньше настоящего. Это была модель, а не факт.
+
+   Как теперь. state.intake — сколько принято по дням:
+       { "2026-08-13": { "<id позиции>": 2 } }
+   state.intakeFrom — день, с которого начали отмечать.
+
+   Про стык. До intakeFrom считаем по плану, после — по отметкам. Иначе при
+   включении отметок остаток прыгнул бы к полной упаковке: за прошлый месяц
+   отметок нет, и панель решила бы, что человек ничего не принимал. */
+
+function принятоЗаДень(дата){ return (state.intake||{})[дата] || {}; }
+
+function принятоСегодня(v){ return +принятоЗаДень(iso(today))[v.id] || 0; }
+
+/* Сумма фактических отметок с указанного дня по сегодня. */
+function принятоСДня(v, сДаты){
+  const с=parse(сДаты); if(!с) return 0;
+  let всего=0;
+  Object.keys(state.intake||{}).forEach(д=>{
+    const дата=parse(д);
+    if(дата && дата>=с && дата<=today) всего += +state.intake[д][v.id] || 0;
+  });
+  return всего;
+}
+
 function vitRemaining(v){
   if(v.status==="ordered") return null; // ещё не получено — приём не начался
   // Позиция пришла из назначения врача: сколько куплено — неизвестно.
@@ -824,10 +896,30 @@ function vitRemaining(v){
   // из заказа: количество есть, а приём в день неизвестен — считать нечем
   if(v.needsDose) return null;
   if(!v.perDay||v.perDay<=0) return null; // расходник — без обратного отсчёта
-  let rem=v.stock;
-  if(v.started){const s=parse(v.started); if(s){const used=Math.max(0,daysBetween(today,s)+1)*v.perDay; rem=v.stock-used;}}
-  return Math.max(0,rem);
+
+  const начало=v.started?parse(v.started):null;
+  if(!начало) return Math.max(0, v.stock);
+
+  const отсчёт=state.intakeFrom?parse(state.intakeFrom):null;
+  let израсходовано;
+
+  if(!отсчёт){
+    // отметки ещё не начинали вести — как раньше, по плану
+    израсходовано = Math.max(0, daysBetween(today,начало)+1) * v.perDay;
+  } else if(отсчёт<=начало){
+    // отмечали с самого начала приёма — только факт
+    израсходовано = принятоСДня(v, v.started);
+  } else {
+    // до дня отметок — по плану, дальше — по факту
+    израсходовано = Math.max(0, daysBetween(отсчёт,начало)) * v.perDay
+                  + принятоСДня(v, state.intakeFrom);
+  }
+  return Math.max(0, v.stock - израсходовано);
 }
+
+/* Считается ли остаток по фактическим отметкам — нужно, чтобы подписать
+   цифру и не выдавать модель за факт. */
+function остатокПоФакту(){ return !!state.intakeFrom; }
 function vitDaysLeft(v){const r=vitRemaining(v); return r==null?null:Math.floor(r/v.perDay);}
 function vitReorderDate(v){const dl=vitDaysLeft(v); return dl==null?null:addDays(today,Math.max(0,dl-v.reorderDays));}
 function vitCourseEnd(v){return (v.courseMonths&&v.started)?addMonths(parse(v.started),v.courseMonths):null;}
@@ -3535,10 +3627,100 @@ function renderStorageNote(){
 function renderAll(){
   renderDayStatus();
   renderDemoBanner();
+  if(view==="overview") renderIntake();
   renderStorageNote();
   if(view==="overview"){renderAttention();renderMetrics();renderCalendar();renderTabs();renderTabBody();}
   else{renderGoals();renderFTabs();renderFTabBody();}
 }
+/* ---------- приём на сегодня ----------
+   Точками, а не галочками: у позиции может быть два приёма в день, и надо
+   видеть «принял один из двух», а не «принял / не принял». */
+
+const ПРИЁМ_МАКС_ТОЧЕК=6;   /* больше — уже не дозы, а граммы или миллилитры */
+
+/* Единицу берём из описания позиции: «~30 г/порция», «~1 мл × 2/день».
+   Ищем сразу после числа, а не по границе слова: граница \b в JavaScript
+   считает словом только латиницу, поэтому «30 г» она не находит вовсе.
+   Не нашли — говорим нейтрально «ед.», а не выдумываем. */
+function единицаПриёма(v){
+  const м=String(v.dose||"").match(/\d+\s*(мкг|мг|мл|г|капс|таб)/i);
+  return м?м[1].toLowerCase():"ед.";
+}
+function renderIntake(){
+  const el=document.getElementById("intake");
+  if(!el) return;
+
+  const позиции=state.vitamins.filter(v=>
+    v.status!=="ordered" && !v.needsDose && !v.needsStock && v.perDay>0);
+
+  if(!позиции.length){ el.innerHTML=""; el.className=""; return; }
+
+  /* В счётчике сверху позиция с граммами весит одну отметку, а не тридцать:
+     иначе «0 из 40» — это на 3/4 протеин, и число теряет смысл. */
+  const единиц=v=>v.perDay>ПРИЁМ_МАКС_ТОЧЕК?1:v.perDay;
+  const сделано=v=>v.perDay>ПРИЁМ_МАКС_ТОЧЕК
+    ? (принятоСегодня(v)>0?1:0)
+    : Math.min(принятоСегодня(v),v.perDay);
+  const всегоДоз=позиции.reduce((s,v)=>s+единиц(v),0);
+  const принято=позиции.reduce((s,v)=>s+сделано(v),0);
+
+  const строки=позиции.map(v=>{
+    const n=принятоСегодня(v);
+
+    /* Точки — только для считаемых доз. У протеина «приём в день» равен 30,
+       потому что это граммы порции, а не таблетки: панель нарисовала бы
+       тридцать точек. Для таких позиций — одна отметка «принял», которая
+       записывает всю дневную норму. */
+    if(v.perDay>ПРИЁМ_МАКС_ТОЧЕК){
+      const отмечено=n>0;
+      return `<div class="intake-row">
+        <span class="intake-name">${esc(v.name)}
+          <span class="mini">${v.perDay} ${esc(единицаПриёма(v))} в день</span></span>
+        <button class="dose-one${отмечено?" on":""}"
+          onclick="отметитьПриём('${v.id}',${отмечено?0:v.perDay})">${отмечено?"принято":"отметить"}</button>
+        </div>`;
+    }
+
+    const точки=Array.from({length:v.perDay},(_,i)=>{
+      const номер=i+1;
+      return `<button class="dose${номер<=n?" on":""}" title="принято ${номер} из ${v.perDay}"
+        onclick="отметитьПриём('${v.id}',${номер})"></button>`;
+    }).join("");
+    return `<div class="intake-row">
+      <span class="intake-name">${esc(v.name)}</span>
+      <span class="intake-dots">${точки}</span>
+      <span class="intake-count">${n} / ${v.perDay}</span></div>`;
+  }).join("");
+
+  el.className="panel intake";
+  el.innerHTML=`<div class="panel-head">
+      <h2>Приём сегодня</h2>
+      <span class="intake-total${принято>=всегоДоз?" done":""}">${принято} из ${всегоДоз}</span>
+    </div>
+    <div class="panel-body">${строки}
+      <div class="mini" style="margin-top:8px">${остатокПоФакту()
+        ? "Остаток считается по этим отметкам."
+        : "Пока отметок нет, остаток считается по плану приёма. С первой отметки — по факту."}</div>
+    </div>`;
+}
+async function отметитьПриём(id, номер){
+  const v=state.vitamins.find(x=>x.id===id);
+  if(!v) return;
+  const день=iso(today);
+  if(!state.intake[день]) state.intake[день]={};
+  const было=+state.intake[день][id] || 0;
+  /* нажатие на уже закрашенную точку снимает её — так уменьшают счёт */
+  state.intake[день][id] = (было===номер) ? номер-1 : номер;
+  if(state.intake[день][id]<=0) delete state.intake[день][id];
+  if(!Object.keys(state.intake[день]).length) delete state.intake[день];
+
+  /* день первой отметки — точка, с которой остаток считается по факту */
+  if(!state.intakeFrom) state.intakeFrom=день;
+
+  await save();
+  renderAll();
+}
+
 /* Баннер про демонстрационные данные есть только в публичной сборке — его
    вставляет собиратель. В личной версии его нет, поэтому молча выходим.
    Как только человек загрузил свой файл, баннер перестаёт быть правдой. */
