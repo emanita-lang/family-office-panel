@@ -250,6 +250,22 @@ tr:last-child td{border-bottom:none}
 .viewbtn{padding:10px 16px;font-family:var(--display);font-size:14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
 .viewbtn.active{color:var(--primary);border-bottom-color:var(--primary)}
 
+/* дневник тренировок */
+.wl-list{border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.wl-day{background:var(--bg);padding:6px 12px;font-family:var(--display);font-size:11px;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;
+  border-bottom:1px solid var(--line)}
+.wl-row{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line)}
+.wl-row:last-child{border-bottom:none}
+.wl-main{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 9px}
+.wl-type{font-size:13.5px;font-weight:600}
+.wl-min{font-family:var(--display);font-size:12px;color:var(--muted)}
+.wl-main .mini{flex:1 1 100%}
+@media(max-width:520px){
+  .wl-row{flex-wrap:wrap}
+  .wl-row .rowbtns{flex:1 1 100%;justify-content:flex-end;border-top:1px solid var(--line);padding-top:6px}
+}
+
 /* приём сегодня — первый блок обзора, единственное ежедневное действие */
 .intake{margin-bottom:18px}
 .intake .panel-head h2{font-size:15px}
@@ -826,6 +842,8 @@ function migrate(){
   if(!Array.isArray(state.fitnessGoals)){ state.fitnessGoals=[]; ch=true; }
   /* справочник «мои продукты» — пустой у всех, кто обновился с прежней версии */
   if(!Array.isArray(state.foods)){ state.foods=[]; ch=true; }
+  /* дневник тренировок: пустой у всех, кто обновился с прежней версии */
+  if(!Array.isArray(state.workoutLog)){ state.workoutLog=[]; ch=true; }
   /* отметки приёма по дням. intakeFrom намеренно не заполняем: он появится
      в день первой отметки, и до этого дня остаток считается по плану, как
      раньше. Поставить его сегодня задним числом значило бы объявить, что
@@ -940,7 +958,9 @@ function attentionClean(){
     if(n<=30){const r=relLabel(nx);out.push({crit:n<0,tag:"Анализы",msg:`${l.name} — сдать`,when:`${r.t} · ${fmt(nx)}`,sort:n});}});
   state.doctors.filter(d=>!d.done).forEach(d=>{const dt=parse(d.date);if(!dt)return;const n=daysBetween(dt,today);
     if(n<=7){const r=relLabel(dt);out.push({crit:n<0,tag:"Врачи",msg:`${d.spec}${d.who&&d.who!=="—"?" — "+d.who:""}`,when:`${r.t} · ${fmt(dt)}`,sort:n});}});
-  state.workouts.forEach(w=>{const left=w.perWeek-w.doneThisWeek;if(left>0&&today.getDay()>=4){
+  /* «Требует внимания» тоже считает по дневнику, а не по ручному счётчику:
+     иначе после перехода на дневник здесь остались бы старые цифры. */
+  state.workouts.forEach(w=>{const left=w.perWeek-сделаноЗаНеделю(w.type);if(left>0&&today.getDay()>=4){
     out.push({crit:false,tag:"Тренировки",msg:`${w.type}: осталось ${left} трен. на неделе`,when:"до конца недели",sort:6});}});
   return out.sort((a,b)=>a.sort-b.sort);
 }
@@ -1233,18 +1253,155 @@ function docTable(){
 }
 async function toggleDocExpand(id){expandedDoc=expandedDoc===id?null:id;renderTabBody();}
 function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+/* ---------- дневник тренировок ----------
+
+   Раньше выполненное было счётчиком «2 из 3», который надо было обнулять
+   вручную по понедельникам, — и панель сама об этом писала. Забыл обнулить,
+   и цифра врёт всю следующую неделю.
+
+   Теперь счётчик считается ИЗ ЗАПИСЕЙ дневника: сколько тренировок этого
+   типа попало в текущую неделю. Обнулять нечего — при наступлении новой
+   недели прошлые записи просто перестают в неё попадать. И появляется то,
+   чего не было: что именно человек делал, когда и сколько по времени.
+   Тренеру раньше проверять было нечего. */
+
+/* Неделя с понедельника: в России считают так, а getDay() отдаёт 0 для
+   воскресенья — без сдвига неделя начиналась бы с воскресенья. */
+function началоНедели(д){
+  const x=new Date(д||today); x.setHours(0,0,0,0);
+  x.setDate(x.getDate()-((x.getDay()+6)%7));
+  return x;
+}
+function записиНедели(когда){
+  const с=началоНедели(когда), по=addDays(с,6);
+  return (state.workoutLog||[]).filter(з=>{
+    const д=parse(з.дата); return д && д>=с && д<=по;
+  });
+}
+function сделаноЗаНеделю(тип){
+  return записиНедели().filter(з=>з.тип===тип).length;
+}
+const ОЩУЩЕНИЯ=["легко","нормально","тяжело"];
+
 function wrkTable(){
-  if(!state.workouts.length)return head("План тренировок (неделя)","+ Тип","openWrk()")+empty("Нет тренировок","Добавьте тип тренировки и цель по неделе.");
-  const rows=state.workouts.map(w=>{const pct=w.perWeek>0?Math.min(100,(w.doneThisWeek/w.perWeek)*100):0;
-    const done=w.doneThisWeek>=w.perWeek;
-    return `<tr><td><b>${w.type}</b><div class="mini">цель: ${w.perWeek}/нед.</div></td>
-      <td><div class="num">${w.doneThisWeek} / ${w.perWeek}</div><div class="bar"><i style="width:${pct}%;background:${done?"var(--ok)":"var(--primary)"}"></i></div></td>
-      <td><button class="btn ghost small" onclick="wrkTick('${w.id}',1)">+1</button>
-          <button class="btn line small" onclick="wrkTick('${w.id}',-1)">−1</button></td>
-      <td>${rowbtns("workouts",w.id)}</td></tr>`;}).join("");
-  return head("План тренировок (неделя)","+ Тип","openWrk()")+
-    `<table><thead><tr><th>Тип</th><th>Выполнено</th><th>Отметить</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
-    `<div class="mini" style="margin-top:10px">Счётчик недели обнуляйте вручную по понедельникам (кнопкой «−1») — авто-сброс добавим в следующей итерации.</div>`;
+  const план=state.workouts.length ? (()=>{
+    const rows=state.workouts.map(w=>{
+      const сделано=сделаноЗаНеделю(w.type);
+      const pct=w.perWeek>0?Math.min(100,(сделано/w.perWeek)*100):0;
+      const готово=сделано>=w.perWeek;
+      return `<tr><td class="title"><b>${esc(w.type)}</b><div class="mini">цель: ${w.perWeek}/нед.</div></td>
+        <td data-label="За неделю"><div class="num">${сделано} / ${w.perWeek}</div>
+          <div class="bar"><i style="width:${pct}%;background:${готово?"var(--ok)":"var(--primary)"}"></i></div></td>
+        <td class="acts"><div class="rowbtns">
+          <button class="btn ghost small" onclick="openWrkLog('','${esc(w.type)}')">+ Запись</button>
+          <button class="iconbtn" onclick="edit('workouts','${w.id}')">Изм.</button>
+          <button class="iconbtn" onclick="del('workouts','${w.id}')">Удал.</button></div></td></tr>`;
+    }).join("");
+    return `<table class="cards"><thead><tr><th>Тип</th><th>За неделю</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <div class="mini" style="margin-top:8px">Счётчик считается из дневника за текущую неделю —
+      обнулять вручную не нужно, в понедельник он начинается заново.</div>`;
+  })() : empty("Нет типов тренировок","Добавьте тип и цель на неделю — счётчик будет считаться из дневника.");
+
+  return head("План тренировок (неделя)","+ Тип","openWrk()") + план + wrkLogList();
+}
+
+/* Список записей дневника, сгруппированный по дням. */
+function wrkLogList(){
+  const записи=(state.workoutLog||[]).slice()
+    .sort((a,b)=> a.дата===b.дата ? 0 : (a.дата<b.дата?1:-1));
+
+  const заголовок=`<div class="row-head" style="margin-top:20px"><h3>Дневник тренировок</h3>
+    <button class="btn small" onclick="openWrkLog()">+ Тренировка</button></div>`;
+
+  if(!записи.length) return заголовок
+    + empty("Записей пока нет","Отметьте тренировку — что делали, сколько по времени и как прошло.");
+
+  const недельныйИтог=записиНедели().length;
+  let текущийДень=null;
+  const блоки=записи.slice(0,60).map(з=>{
+    const шапка = з.дата!==текущийДень
+      ? (текущийДень=з.дата, `<div class="wl-day">${(()=>{const d=parse(з.дата);
+          return d?`${fmt(d)} · ${["вс","пн","вт","ср","чт","пт","сб"][d.getDay()]}`:esc(з.дата);})()}</div>`)
+      : "";
+    return шапка + `<div class="wl-row">
+      <div class="wl-main">
+        <span class="wl-type">${esc(з.тип||"Тренировка")}</span>
+        ${з.минут?`<span class="wl-min">${з.минут} мин</span>`:""}
+        ${з.ощущение?`<span class="chip ex">${esc(з.ощущение)}</span>`:""}
+        ${з.что?`<div class="mini">${esc(з.что)}</div>`:""}
+      </div>
+      <div class="rowbtns">
+        <button class="iconbtn" onclick="openWrkLog('${з.id}')">Изм.</button>
+        <button class="iconbtn" onclick="delWrkLog('${з.id}')">Удал.</button></div></div>`;
+  }).join("");
+
+  return заголовок
+    + `<div class="mini" style="margin-bottom:8px">На этой неделе тренировок: <b>${недельныйИтог}</b></div>`
+    + `<div class="wl-list">${блоки}</div>`
+    + (записи.length>60?`<div class="mini" style="margin-top:8px">Показаны последние 60 записей из ${записи.length}.</div>`:"");
+}
+
+function openWrkLog(id, тип){
+  const e = id ? ((state.workoutLog||[]).find(x=>x.id===id)||{}) : {};
+  const типы=[...new Set([
+    ...state.workouts.map(w=>w.type),
+    ...(state.workoutLog||[]).map(з=>з.тип)
+  ].filter(Boolean))];
+  const выбран = e.тип || тип || типы[0] || "";
+
+  show(`<div class="modal-head"><h3>${id?"Изменить":"Новая"} тренировка</h3></div>
+  <div class="modal-body">
+    <div class="field"><label>Дата</label>
+      <input id="wl_date" type="date" value="${e.дата||iso(today)}"></div>
+    <div class="field"><label>Тип</label>
+      ${типы.length?`<select id="wl_type_sel" onchange="wrkTypeChanged()">
+        ${типы.map(т=>`<option value="${esc(т)}"${т===выбран?" selected":""}>${esc(т)}</option>`).join("")}
+        <option value="__свой"${типы.includes(выбран)?"":" selected"}>другое…</option>
+      </select>`:""}
+      <input id="wl_type" value="${esc(типы.includes(выбран)?"":выбран)}"
+        placeholder="Силовая" ${типы.length&&типы.includes(выбран)?'style="display:none"':""}></div>
+    <div class="field two">
+      <div><label>Сколько минут</label><input id="wl_min" type="number" min="0" step="5" value="${e.минут??""}"></div>
+      <div><label>Как прошло</label>
+        <select id="wl_feel">
+          <option value=""${!e.ощущение?" selected":""}>не указывать</option>
+          ${ОЩУЩЕНИЯ.map(о=>`<option value="${о}"${e.ощущение===о?" selected":""}>${о}</option>`).join("")}
+        </select></div></div>
+    <div class="field"><label>Что делали</label>
+      <textarea id="wl_what" rows="2" placeholder="грудь/спина, 4 подхода">${esc(e.что||"")}</textarea></div>
+    <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
+      <button class="btn" onclick="saveWrkLog('${id||""}')">Сохранить</button></div></div>`);
+}
+
+/* Выбор «другое…» открывает поле для своего названия. */
+function wrkTypeChanged(){
+  const sel=document.getElementById("wl_type_sel"), поле=document.getElementById("wl_type");
+  if(!sel||!поле) return;
+  const своё = sel.value==="__свой";
+  поле.style.display = своё ? "" : "none";
+  if(своё) поле.focus();
+}
+
+async function saveWrkLog(id){
+  const sel=document.getElementById("wl_type_sel");
+  let тип = (sel && sel.value!=="__свой") ? sel.value : val("wl_type");
+  if(!тип) тип="Тренировка";
+  const дата=document.getElementById("wl_date").value || iso(today);
+  const о={id:id||u(), дата, тип,
+    минут: parseInt(document.getElementById("wl_min").value,10) || null,
+    ощущение: document.getElementById("wl_feel").value || "",
+    что: document.getElementById("wl_what").value.trim()};
+  if(!Array.isArray(state.workoutLog)) state.workoutLog=[];
+  const i=state.workoutLog.findIndex(x=>x.id===id);
+  if(i>=0) state.workoutLog[i]=о; else state.workoutLog.push(о);
+  await done();
+}
+
+async function delWrkLog(id){
+  if(!confirm("Удалить запись о тренировке?")) return;
+  state.workoutLog=(state.workoutLog||[]).filter(x=>x.id!==id);
+  await save(); renderAll();
 }
 function metricTable(){
   const m=state.metrics.slice().sort((a,b)=>b.date<a.date?-1:1);
@@ -1319,8 +1476,6 @@ function renderMetricChart(){
 function empty(t,s){return `<div class="empty"><b>${t}</b>${s}</div>`;}
 
 /* ---------- workout ticks / doctor toggle ---------- */
-async function wrkTick(id,n){const w=state.workouts.find(x=>x.id===id);if(!w)return;
-  w.doneThisWeek=Math.max(0,w.doneThisWeek+n);await save();renderAll();}
 async function toggleDoc(id){const d=state.doctors.find(x=>x.id===id);if(!d)return;d.done=!d.done;await save();renderAll();}
 async function delMetric(i){const m=state.metrics.slice().sort((a,b)=>b.date<a.date?-1:1);const t=m[i];
   state.metrics=state.metrics.filter(x=>x!==t);await save();renderAll();}
@@ -1397,8 +1552,9 @@ function openWrk(w){const e=w||{};show(`<div class="modal-head"><h3>${w?"Изм�
     <div class="field"><label>Цель в неделю (раз)</label><input id="f_pw" type="number" min="1" value="${e.perWeek??3}"></div>
     <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
       <button class="btn" onclick="saveWrk('${e.id||""}')">Сохранить</button></div></div>`);}
-async function saveWrk(id){const o={id:id||u(),type:val("f_type")||"Тренировка",perWeek:numv("f_pw")||3,
-  doneThisWeek:id?state.workouts.find(x=>x.id===id)?.doneThisWeek||0:0};
+/* doneThisWeek больше не хранится: выполненное за неделю считается из
+   дневника тренировок, поэтому счётчику негде разойтись с фактом. */
+async function saveWrk(id){const o={id:id||u(),type:val("f_type")||"Тренировка",perWeek:numv("f_pw")||3};
   upsert("workouts",o);await done();}
 
 function openMetric(){show(`<div class="modal-head"><h3>Запись параметров</h3></div>
