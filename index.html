@@ -266,6 +266,13 @@ tr:last-child td{border-bottom:none}
   .wl-row .rowbtns{flex:1 1 100%;justify-content:flex-end;border-top:1px solid var(--line);padding-top:6px}
 }
 
+/* кнопки в шапке раздела тренировок */
+.wrk-head-btns{display:flex;gap:6px;flex-wrap:wrap}
+/* ссылка-кнопка: второстепенное действие рядом с пояснением */
+.linkbtn{color:var(--primary);font-family:var(--body);font-size:inherit;
+  text-decoration:underline;text-underline-offset:2px;padding:0}
+.linkbtn:hover{opacity:.75}
+
 /* выбор разделов для выгрузки специалисту */
 .sh-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .sh-row{display:flex;align-items:center;gap:10px;padding:9px 12px;
@@ -561,10 +568,6 @@ tr:last-child td{border-bottom:none}
             <button class="btn line small" onclick="exportData()">↓ Скачать данные</button>
             <button class="btn line small" onclick="document.getElementById('importFile').click()">↑ Восстановить из копии</button>
             <div class="mini storage-note" id="storageNote"></div>
-            <div class="data-menu-sep"></div>
-            <div class="data-menu-title">Поделиться со специалистом</div>
-            <button class="btn line small" onclick="openShare()">→ Выгрузка для тренера</button>
-            <div class="mini">Файл только с выбранными разделами. Что не выбрали — в файл не попадает.</div>
             <div class="data-menu-sep"></div>
             <button class="btn line small danger" onclick="resetAll()">Сбросить всё</button>
             <div class="mini">Вернёт панель к первоначальному примеру. Необратимо.</div>
@@ -1329,7 +1332,18 @@ function wrkTable(){
       обнулять вручную не нужно, в понедельник он начинается заново.</div>`;
   })() : empty("Нет типов тренировок","Добавьте тип и цель на неделю — счётчик будет считаться из дневника.");
 
-  return head("План тренировок (неделя)","+ Тип","openWrk()") + план + wrkLogList();
+  /* Кнопка отправки живёт здесь, а не в меню «Данные»: человек думает про
+     тренера именно тогда, когда смотрит на свои тренировки. Одно нажатие —
+     файл с обычным набором разделов; выбор разделов рядом, для редкого случая. */
+  const шапка=`<div class="row-head"><h3>План тренировок (неделя)</h3>
+    <div class="wrk-head-btns">
+      <button class="btn small" onclick="отправитьТренеру()">→ Отправить тренеру</button>
+      <button class="btn ghost small" onclick="openWrk()">+ Тип</button>
+    </div></div>
+    <div class="mini" style="margin:-4px 0 12px">Файл с тренировками, питанием и метриками.
+      <button class="linkbtn" onclick="openShare()">выбрать разделы</button></div>`;
+
+  return шапка + план + wrkLogList();
 }
 
 /* Список записей дневника, сгруппированный по дням. */
@@ -3844,11 +3858,21 @@ function обновитьПредупреждение(){
     : "Медицинских разделов в файле не будет.";
 }
 
+/* Отправка в одно нажатие: обычный набор разделов, без вопросов.
+   Медицинского в нём нет — это те же три раздела, что отмечены по умолчанию. */
+async function отправитьТренеру(){
+  await собратьФайл(РАЗДЕЛЫ_ВЫГРУЗКИ.filter(р=>р.по_умолчанию));
+}
+
 async function сделатьВыгрузку(){
   const выбрано=РАЗДЕЛЫ_ВЫГРУЗКИ.filter(р=>{
     const c=document.getElementById("sh_"+р.ключ); return c&&c.checked;
   });
   if(!выбрано.length){ alert("Отметьте хотя бы один раздел."); return; }
+  await собратьФайл(выбрано);
+}
+
+async function собратьФайл(выбрано){
 
   /* Пустые заготовки для всех разделов: панель при восстановлении ждёт
      привычную форму данных, и без них файл просто не примут. Пустой массив
