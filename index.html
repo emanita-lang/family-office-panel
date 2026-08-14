@@ -1340,7 +1340,8 @@ function wrkTable(){
       <button class="btn small" onclick="отправитьТренеру()">→ Отправить тренеру</button>
       <button class="btn ghost small" onclick="openWrk()">+ Тип</button>
     </div></div>
-    <div class="mini" style="margin:-4px 0 12px">Файл с тренировками, питанием и метриками.
+    <div class="mini" style="margin:-4px 0 12px">Отчёт-страница с тренировками, питанием и метриками —
+      открывается двойным щелчком.
       <button class="linkbtn" onclick="openShare()">выбрать разделы</button></div>`;
 
   return шапка + план + wrkLogList();
@@ -3795,6 +3796,161 @@ async function importData(input){
   alert("Данные загружены.");
 }
 
+/* ---------- отчёт для специалиста ----------
+
+   Почему страницей, а не файлом данных. Сначала я собирала .json — данные
+   для панели. Открыть такой файл двойным щелчком нельзя: система не знает,
+   чем его показать. Катерина не смогла даже проверить, что отправляет, а
+   тренеру пришлось бы объяснять про ссылку и «восстановить из копии».
+
+   Теперь это готовая страница: двойной щелчок — открылась в браузере.
+   Ни установки, ни инструкций, ни интернета. Всё внутри одного файла. */
+
+function отчётHTML(выбрано){
+  const включено=к=>выбрано.some(р=>р.ключ===к);
+  const дата=new Date();
+  const части=[];
+
+  if(включено("тренировки")){
+    const план=state.workouts.map(w=>{
+      const с=сделаноЗаНеделю(w.type);
+      return `<tr><td>${esc(w.type)}</td><td class="n">${с} / ${w.perWeek}</td></tr>`;
+    }).join("");
+
+    const записи=(state.workoutLog||[]).slice().sort((a,b)=>a.дата<b.дата?1:-1).slice(0,60);
+    let день=null;
+    const дневник=записи.map(з=>{
+      const шапка = з.дата!==день ? (день=з.дата,
+        `<tr class="day"><td colspan="4">${(()=>{const d=parse(з.дата);
+          return d?`${fmt(d)} · ${["вс","пн","вт","ср","чт","пт","сб"][d.getDay()]}`:esc(з.дата);})()}</td></tr>`) : "";
+      return шапка+`<tr><td><b>${esc(з.тип||"Тренировка")}</b></td>
+        <td class="n">${з.минут?з.минут+" мин":"—"}</td>
+        <td>${esc(з.ощущение||"")}</td>
+        <td>${esc(з.что||"")}</td></tr>`;
+    }).join("");
+
+    части.push(`<section><h2>Тренировки</h2>
+      ${план?`<p class="lead">План на неделю и выполнено за текущую неделю</p>
+        <table><thead><tr><th>Тип</th><th>За неделю</th></tr></thead><tbody>${план}</tbody></table>`:""}
+      <h3>Дневник${записи.length?` · записей: ${записи.length}`:""}</h3>
+      ${записи.length
+        ? `<table><thead><tr><th>Тренировка</th><th>Время</th><th>Как прошло</th><th>Что делали</th></tr></thead>
+           <tbody>${дневник}</tbody></table>`
+        : `<p class="empty">Записей нет.</p>`}
+      </section>`);
+
+    const цели=(state.fitnessGoals||[]);
+    if(цели.length) части.push(`<section><h2>Цели</h2>
+      <ul class="goals">${цели.map(г=>`<li${г.done?' class="done"':""}>${esc(г.text)}
+        ${г.source==="trainer"?'<span class="tag">от тренера</span>':""}
+        <span class="per">${г.period==="week"?"неделя":"месяц"}</span></li>`).join("")}</ul></section>`);
+  }
+
+  if(включено("питание")){
+    const tg=state.nutrition.targets;
+    const дни=Object.keys(state.nutrition.log||{}).sort().reverse().slice(0,21);
+    const строки=дни.map(д=>{
+      const s={kcal:0,p:0,f:0,c:0};
+      (state.nutrition.log[д]||[]).forEach(m=>{s.kcal+=+m.kcal||0;s.p+=+m.p||0;s.f+=+m.f||0;s.c+=+m.c||0;});
+      const dt=parse(д);
+      return `<tr><td>${dt?fmt(dt):esc(д)}</td><td class="n">${Math.round(s.kcal)}</td>
+        <td class="n">${Math.round(s.p)}</td><td class="n">${Math.round(s.f)}</td>
+        <td class="n">${Math.round(s.c)}</td></tr>`;
+    }).join("");
+    части.push(`<section><h2>Питание</h2>
+      <p class="lead">Цели в день: ${tg.kcal} ккал · Б ${tg.p} · Ж ${tg.f} · У ${tg.c} г</p>
+      ${дни.length
+        ? `<table><thead><tr><th>Дата</th><th>Ккал</th><th>Б</th><th>Ж</th><th>У</th></tr></thead>
+           <tbody>${строки}</tbody></table>
+           <p class="note">Показаны дни, за которые велись записи. Дни без записей не включены —
+           ноль означал бы «ничего не съедено», а это не то же самое.</p>`
+        : `<p class="empty">Записей нет.</p>`}
+      </section>`);
+  }
+
+  if(включено("метрики")){
+    const m=state.metrics.slice().sort((a,b)=>a.date<b.date?1:-1).slice(0,30);
+    части.push(`<section><h2>Метрики</h2>
+      ${m.length
+        ? `<table><thead><tr><th>Дата</th><th>Recovery</th><th>HRV</th><th>Пульс покоя</th><th>Сон</th><th>Strain</th></tr></thead>
+           <tbody>${m.map(x=>{const d=parse(x.date);
+             return `<tr><td>${d?fmt(d):esc(x.date)}</td><td class="n">${x.recovery??"—"}</td>
+               <td class="n">${x.hrv??"—"}</td><td class="n">${x.rhr??"—"}</td>
+               <td class="n">${x.sleep??"—"}</td><td class="n">${x.strain??"—"}</td></tr>`}).join("")}</tbody></table>`
+        : `<p class="empty">Записей нет.</p>`}
+      </section>`);
+  }
+
+  if(включено("анализы")){
+    const l=state.labs||[];
+    части.push(`<section><h2>Анализы</h2>
+      ${l.length? l.map(п=>`<h3>${esc(п.name)}</h3>
+        ${(п.components||[]).length
+          ? `<table><thead><tr><th>Показатель</th><th>Значение</th><th>Ед.</th><th>Норма</th></tr></thead>
+             <tbody>${п.components.map(c=>`<tr><td>${esc(c.name||"")}</td>
+               <td class="n">${esc(c.value||"—")}</td><td>${esc(c.unit||"")}</td>
+               <td>${esc(c.ref||"")}</td></tr>`).join("")}</tbody></table>`
+          : `<p class="empty">Показатели не заполнены.</p>`}`).join("")
+        : `<p class="empty">Записей нет.</p>`}
+      </section>`);
+  }
+
+  const нет=РАЗДЕЛЫ_ВЫГРУЗКИ.filter(р=>!включено(р.ключ)).map(р=>р.имя);
+
+  return `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Отчёт · ${дата.getDate()} ${MONTHS[дата.getMonth()]} ${дата.getFullYear()}</title>
+<style>
+:root{--ink:#182726;--muted:#6A7B78;--line:#E1E8E5;--bg:#F5F7F6;--primary:#0E5C5B;--ok:#3F855F}
+*{box-sizing:border-box}
+body{margin:0;padding:26px 18px 60px;background:var(--bg);color:var(--ink);
+  font:15px/1.55 -apple-system,system-ui,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto}
+h1{font-size:23px;margin:0 0 4px}
+h2{font-size:17px;margin:0 0 10px}
+h3{font-size:14px;margin:16px 0 7px;color:var(--muted)}
+.sub{color:var(--muted);font-size:13.5px;margin:0 0 18px}
+section{background:#fff;border-radius:13px;padding:18px 20px;margin-bottom:14px;
+  box-shadow:0 1px 2px rgba(24,39,38,.05)}
+.lead{color:var(--muted);font-size:13px;margin:0 0 12px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;padding:0 8px 7px 0;border-bottom:1px solid var(--line)}
+td{padding:7px 8px 7px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.day td{background:var(--bg);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;padding:6px 8px}
+.empty{color:var(--muted);font-size:13px;margin:0}
+.note{color:var(--muted);font-size:12px;margin:10px 0 0;line-height:1.45}
+ul.goals{list-style:none;padding:0;margin:0}
+ul.goals li{padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+ul.goals li:last-child{border-bottom:none}
+ul.goals li.done{color:var(--muted);text-decoration:line-through}
+.tag{background:#E4EFED;color:var(--primary);font-size:10.5px;font-weight:600;
+  padding:2px 7px;border-radius:99px;margin-left:6px}
+.per{color:var(--muted);font-size:11.5px;margin-left:6px}
+.scope{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 15px;
+  margin-bottom:16px;font-size:12.5px;color:var(--muted);line-height:1.5}
+.foot{color:var(--muted);font-size:12px;text-align:center;margin-top:22px;line-height:1.6}
+@media print{body{background:#fff;padding:0}section{box-shadow:none;border:1px solid var(--line)}}
+@media(max-width:560px){
+  table{font-size:12.5px}
+  th,td{padding-right:5px}
+  body{padding:16px 12px 40px}
+}
+</style></head><body><div class="wrap">
+  <h1>Отчёт по тренировкам и питанию</h1>
+  <p class="sub">Выгружено ${дата.getDate()} ${MONTHS[дата.getMonth()]} ${дата.getFullYear()},
+    ${String(дата.getHours()).padStart(2,"0")}:${String(дата.getMinutes()).padStart(2,"0")}</p>
+  <div class="scope"><b>В отчёте:</b> ${выбрано.map(р=>esc(р.имя)).join(", ")}.
+    ${нет.length?`<br><b>Не включено:</b> ${нет.map(esc).join(", ")} — эти данные в файл не выгружались.`:""}</div>
+  ${части.join("")}
+  <p class="foot">Панель здоровья · Family Office<br>
+    Файл открывается в браузере и никуда ничего не отправляет.</p>
+</div></body></html>`;
+}
+
 /* ---------- выгрузка для специалиста ----------
 
    Зачем файлом, а не входом. Вход требует сервера: данные лежат в браузере
@@ -3873,46 +4029,21 @@ async function сделатьВыгрузку(){
 }
 
 async function собратьФайл(выбрано){
-
-  /* Пустые заготовки для всех разделов: панель при восстановлении ждёт
-     привычную форму данных, и без них файл просто не примут. Пустой массив
-     честнее отсутствующего поля — видно, что раздел не отдавали. */
-  const данные={vitamins:[],labs:[],doctors:[],schedule:[],metrics:[],
-    workouts:[],workoutLog:[],fitnessGoals:[],foods:[],
-    nutrition:{targets:state.nutrition.targets,log:{}},
-    intake:{},intakeFrom:null,ui:{}};
-
-  /* Признаки выполненных миграций обязаны попасть в файл.
-     Без них панель получателя решает, что данные старые, и ЗАНОВО
-     подставляет препараты и визиты к врачу из заготовок — то есть ровно то,
-     что мы только что вырезали. Найдено проверкой: тренер видел 13 позиций
-     и 2 визита, которых в файле не было вовсе. */
-  Object.keys(state).forEach(k=>{ if(k.startsWith("_migr")) данные[k]=state[k]; });
-
-  выбрано.forEach(р=>р.поля.forEach(ф=>{
-    if(state[ф]!==undefined) данные[ф]=JSON.parse(JSON.stringify(state[ф]));
-  }));
-
-  const payload={формат:"family-office/health",версия:EXPORT_VERSION,
-    назначение:"специалист",
-    состав:выбрано.map(р=>р.имя),
-    выгружено:new Date().toISOString(),ключ:KEY,данные};
-
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json;charset=utf-8"});
+  const html=отчётHTML(выбрано);
+  const blob=new Blob([html],{type:"text/html;charset=utf-8"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url; a.download=`для-тренера-${iso(new Date())}.json`;
+  a.href=url; a.download=`тренировки-${iso(new Date())}.html`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 
-  show(`<div class="modal-head"><h3>Файл готов</h3></div>
+  show(`<div class="modal-head"><h3>Отчёт готов</h3></div>
   <div class="modal-body">
-    <div class="mini" style="margin-bottom:10px">В файле: ${выбрано.map(р=>р.имя).join(", ")}.</div>
-    <div class="hint" style="margin-top:0"><b>Что отправить тренеру:</b><br>
-      1. этот файл<br>
-      2. ссылку на панель — он откроет её в браузере<br>
-      3. «Данные» → «Восстановить из копии» → выбрать файл</div>
-    <div class="mini">Разделы, которые вы не отдали, будут у него пустыми — так и должно быть.</div>
+    <div class="mini" style="margin-bottom:10px">В отчёте: ${выбрано.map(р=>esc(р.имя)).join(", ")}.</div>
+    <div class="hint" style="margin-top:0"><b>Файл открывается двойным щелчком</b> — в браузере,
+      как обычная страница. Ни установки, ни ссылки, ни интернета не нужно.<br><br>
+      Откройте сами, чтобы проверить, что отправляете, и переслайте тренеру любым способом.</div>
+    <div class="mini">Разделов, которые вы не выбрали, в файле нет — не скрыты, а отсутствуют.</div>
     <div class="modal-foot"><button class="btn" onclick="closeModal()">Понятно</button></div>
   </div>`);
 }
