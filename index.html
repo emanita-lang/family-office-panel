@@ -266,6 +266,18 @@ tr:last-child td{border-bottom:none}
   .wl-row .rowbtns{flex:1 1 100%;justify-content:flex-end;border-top:1px solid var(--line);padding-top:6px}
 }
 
+/* выбор разделов для выгрузки специалисту */
+.sh-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sh-row{display:flex;align-items:center;gap:10px;padding:9px 12px;
+  border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer}
+.sh-row:last-child{border-bottom:none}
+.sh-row input{width:18px;height:18px;flex:0 0 auto;accent-color:var(--primary)}
+.sh-name{flex:1}
+.sh-count{font-family:var(--display);font-size:11.5px;color:var(--muted)}
+/* полоса «это выгрузка от другого человека» — у получателя файла */
+.partial-note{background:var(--primary-soft);border:1px solid var(--primary);
+  border-radius:10px;padding:11px 14px;margin:0 0 16px;font-size:13px;line-height:1.5;color:var(--primary)}
+
 /* ---------- приём сегодня ----------
    Компактно нарочно. Прежний вариант был полноценной панелью на восемь
    строк и занимал 698 пикселей — почти весь экран телефона, и это было
@@ -550,6 +562,10 @@ tr:last-child td{border-bottom:none}
             <button class="btn line small" onclick="document.getElementById('importFile').click()">↑ Восстановить из копии</button>
             <div class="mini storage-note" id="storageNote"></div>
             <div class="data-menu-sep"></div>
+            <div class="data-menu-title">Поделиться со специалистом</div>
+            <button class="btn line small" onclick="openShare()">→ Выгрузка для тренера</button>
+            <div class="mini">Файл только с выбранными разделами. Что не выбрали — в файл не попадает.</div>
+            <div class="data-menu-sep"></div>
             <button class="btn line small danger" onclick="resetAll()">Сбросить всё</button>
             <div class="mini">Вернёт панель к первоначальному примеру. Необратимо.</div>
           </div>
@@ -559,6 +575,8 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
   </header>
+
+  <div id="partialNote" class="partial-note" style="display:none"></div>
 
     <div class="demo-banner">
     <b>Показаны демонстрационные данные</b> — все медицинские записи здесь
@@ -3751,12 +3769,128 @@ async function importData(input){
      несёт баннер «все медицинские данные здесь вымышленные». После загрузки
      своего файла этот баннер стал бы неправдой — поэтому он скрывается. */
   state.свои = true;
+  /* Файл-выгрузка для специалиста несёт список отданных разделов. Сохраняем
+     его, чтобы получатель видел, что пустые разделы пусты намеренно, а не
+     потому что панель сломалась. */
+  state.частичная = (payload && payload.назначение==="специалист" && payload.состав) ? payload.состав : null;
   migrate();
   await save();
   selectedDate = iso(today);
   renderAll();
   renderStorageNote();
   alert("Данные загружены.");
+}
+
+/* ---------- выгрузка для специалиста ----------
+
+   Зачем файлом, а не входом. Вход требует сервера: данные лежат в браузере
+   устройства, и «зайти и посмотреть» физически некуда. Файл работает сегодня.
+
+   Как это выглядит для тренера. Он получает небольшой файл и ссылку на
+   панель. Открывает ссылку, нажимает «Восстановить из копии», выбирает файл —
+   и видит ровно те разделы, которые вы отдали. Остальных данных в файле НЕТ,
+   а не «скрыты интерфейсом»: их нельзя достать, потому что их там нет.
+
+   Про анализы. По умолчанию они выключены. Вы можете их включить — это ваше
+   право, — но выключенное состояние по умолчанию выбрано нарочно: файл уходит
+   в мессенджер, и решение отдать медицинские показатели должно быть
+   осознанным нажатием, а не тем, о чём забыли. */
+
+const РАЗДЕЛЫ_ВЫГРУЗКИ=[
+  {ключ:"тренировки", имя:"Тренировки и цели", поля:["workouts","workoutLog","fitnessGoals"], по_умолчанию:true},
+  {ключ:"питание",    имя:"Питание и КБЖУ",   поля:["nutrition","foods"],                    по_умолчанию:true},
+  {ключ:"метрики",    имя:"Метрики Whoop",     поля:["metrics"],                              по_умолчанию:true},
+  {ключ:"анализы",    имя:"Анализы",           поля:["labs"],                                 по_умолчанию:false},
+  {ключ:"врачи",      имя:"Врачи и назначения",поля:["doctors","vitamins"],                   по_умолчанию:false},
+];
+
+function openShare(){
+  const строки=РАЗДЕЛЫ_ВЫГРУЗКИ.map(р=>{
+    const сколько=р.поля.reduce((s,ф)=>{
+      const v=state[ф];
+      return s + (Array.isArray(v)?v.length : (v&&typeof v==="object"?Object.keys(v.log||v).length:0));
+    },0);
+    return `<label class="sh-row">
+      <input type="checkbox" id="sh_${р.ключ}"${р.по_умолчанию?" checked":""}>
+      <span class="sh-name">${р.имя}</span>
+      <span class="sh-count">${сколько?сколько+" зап.":"пусто"}</span></label>`;
+  }).join("");
+
+  show(`<div class="modal-head"><h3>Выгрузка для тренера</h3></div>
+  <div class="modal-body">
+    <div class="hint" style="margin-top:0">Что отметите — попадёт в файл. Что не отметите —
+      в файле не появится вовсе, и достать это оттуда нельзя.</div>
+    <div class="sh-list">${строки}</div>
+    <div class="mini" id="sh_warn" style="margin:10px 0 0"></div>
+    <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
+      <button class="btn" onclick="сделатьВыгрузку()">Скачать файл</button></div>
+  </div>`);
+  обновитьПредупреждение();
+  РАЗДЕЛЫ_ВЫГРУЗКИ.forEach(р=>{
+    const el=document.getElementById("sh_"+р.ключ);
+    if(el) el.addEventListener("change", обновитьПредупреждение);
+  });
+}
+
+/* Предупреждаем ровно тогда, когда в файл собираются медицинские разделы. */
+function обновитьПредупреждение(){
+  const el=document.getElementById("sh_warn"); if(!el) return;
+  const мед=["анализы","врачи"].filter(к=>{
+    const c=document.getElementById("sh_"+к); return c&&c.checked;
+  });
+  el.innerHTML = мед.length
+    ? `<b style="color:var(--attn)">В файл войдут медицинские данные:</b> ${мед.join(", ")}.
+       Файл уйдёт в мессенджер и останется на устройстве получателя.`
+    : "Медицинских разделов в файле не будет.";
+}
+
+async function сделатьВыгрузку(){
+  const выбрано=РАЗДЕЛЫ_ВЫГРУЗКИ.filter(р=>{
+    const c=document.getElementById("sh_"+р.ключ); return c&&c.checked;
+  });
+  if(!выбрано.length){ alert("Отметьте хотя бы один раздел."); return; }
+
+  /* Пустые заготовки для всех разделов: панель при восстановлении ждёт
+     привычную форму данных, и без них файл просто не примут. Пустой массив
+     честнее отсутствующего поля — видно, что раздел не отдавали. */
+  const данные={vitamins:[],labs:[],doctors:[],schedule:[],metrics:[],
+    workouts:[],workoutLog:[],fitnessGoals:[],foods:[],
+    nutrition:{targets:state.nutrition.targets,log:{}},
+    intake:{},intakeFrom:null,ui:{}};
+
+  /* Признаки выполненных миграций обязаны попасть в файл.
+     Без них панель получателя решает, что данные старые, и ЗАНОВО
+     подставляет препараты и визиты к врачу из заготовок — то есть ровно то,
+     что мы только что вырезали. Найдено проверкой: тренер видел 13 позиций
+     и 2 визита, которых в файле не было вовсе. */
+  Object.keys(state).forEach(k=>{ if(k.startsWith("_migr")) данные[k]=state[k]; });
+
+  выбрано.forEach(р=>р.поля.forEach(ф=>{
+    if(state[ф]!==undefined) данные[ф]=JSON.parse(JSON.stringify(state[ф]));
+  }));
+
+  const payload={формат:"family-office/health",версия:EXPORT_VERSION,
+    назначение:"специалист",
+    состав:выбрано.map(р=>р.имя),
+    выгружено:new Date().toISOString(),ключ:KEY,данные};
+
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`для-тренера-${iso(new Date())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+
+  show(`<div class="modal-head"><h3>Файл готов</h3></div>
+  <div class="modal-body">
+    <div class="mini" style="margin-bottom:10px">В файле: ${выбрано.map(р=>р.имя).join(", ")}.</div>
+    <div class="hint" style="margin-top:0"><b>Что отправить тренеру:</b><br>
+      1. этот файл<br>
+      2. ссылку на панель — он откроет её в браузере<br>
+      3. «Данные» → «Восстановить из копии» → выбрать файл</div>
+    <div class="mini">Разделы, которые вы не отдали, будут у него пустыми — так и должно быть.</div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Понятно</button></div>
+  </div>`);
 }
 
 function renderStorageNote(){
@@ -3791,6 +3925,7 @@ function renderStorageNote(){
 function renderAll(){
   renderDayStatus();
   renderDemoBanner();
+  renderPartialNote();
   if(view==="overview") renderIntake();
   renderStorageNote();
   if(view==="overview"){renderAttention();renderMetrics();renderCalendar();renderTabs();renderTabBody();}
@@ -3908,6 +4043,21 @@ async function отметитьПриём(id, номер){
 
   await save();
   renderAll();
+}
+
+/* Полоса у получателя выгрузки: какие разделы ему отдали. Без неё пустые
+   «Анализы» читались бы как поломка панели, а не как чужое решение. */
+function renderPartialNote(){
+  const el=document.getElementById("partialNote");
+  if(!el) return;
+  if(state && Array.isArray(state.частичная) && state.частичная.length){
+    el.style.display="";
+    el.innerHTML=`<b>Это выгрузка, а не полная панель.</b> Вам отдали разделы:
+      ${state.частичная.map(esc).join(", ")}. Остальные пусты намеренно —
+      этих данных в файле нет.`;
+  } else {
+    el.style.display="none";
+  }
 }
 
 /* Баннер про демонстрационные данные есть только в публичной сборке — его
