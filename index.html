@@ -266,37 +266,42 @@ tr:last-child td{border-bottom:none}
   .wl-row .rowbtns{flex:1 1 100%;justify-content:flex-end;border-top:1px solid var(--line);padding-top:6px}
 }
 
-/* приём сегодня — первый блок обзора, единственное ежедневное действие */
-.intake{margin-bottom:18px}
-.intake .panel-head h2{font-size:15px}
-.intake-total{font-family:var(--display);font-size:13px;font-weight:600;color:var(--muted)}
-.intake-total.done{color:var(--ok)}
-.intake-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
-.intake-row:last-of-type{border-bottom:none}
-.intake-name{flex:1;font-size:13.5px;font-weight:500;min-width:0}
-.intake-dots{display:flex;gap:6px;flex:0 0 auto}
-/* точка приёма: крупная нарочно — по ней попадают пальцем на телефоне */
-.dose{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);
-  background:var(--bg);padding:0;flex:0 0 auto;transition:background .12s,border-color .12s}
+/* ---------- приём сегодня ----------
+   Компактно нарочно. Прежний вариант был полноценной панелью на восемь
+   строк и занимал 698 пикселей — почти весь экран телефона, и это было
+   первое, что видно. Теперь это узкая полоса с прогрессом, которая
+   разворачивается по нажатию и сама сворачивается, когда всё принято. */
+.intake-card{display:block;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;margin-bottom:14px;overflow:hidden}
+.intake-card.all-done{border-color:var(--ok-soft)}
+.in-head{display:flex;align-items:center;gap:10px;width:100%;padding:10px 13px;
+  background:none;border:none;text-align:left;font-family:var(--body)}
+.in-title{font-family:var(--display);font-size:13.5px;font-weight:600;flex:0 0 auto}
+.in-progress{flex:1;height:5px;border-radius:3px;background:var(--line);overflow:hidden;min-width:30px}
+.in-progress i{display:block;height:100%;background:var(--primary);border-radius:3px;transition:width .2s}
+.intake-card.all-done .in-progress i{background:var(--ok)}
+.in-count{font-family:var(--display);font-size:12.5px;color:var(--muted);flex:0 0 auto}
+.in-count.done{color:var(--ok)}
+.in-chev{color:var(--muted);font-size:9px;flex:0 0 auto}
+.in-body{padding:0 13px 10px}
+/* строка: название и точки в одну линию, без переносов на телефоне */
+.in-row{display:flex;align-items:center;gap:10px;padding:5px 0;
+  border-top:1px solid var(--line)}
+.in-name{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.in-sub{color:var(--muted);font-size:11.5px;margin-left:6px}
+.in-row.done .in-name{color:var(--muted)}
+.in-dots{display:flex;gap:5px;flex:0 0 auto}
+/* точка небольшая, но область нажатия расширена отступом — палец попадает */
+.dose{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);
+  background:var(--bg);padding:0;flex:0 0 auto;box-sizing:content-box;
+  margin:5px 0;transition:background .12s,border-color .12s}
 .dose:hover{border-color:var(--primary)}
 .dose.on{background:var(--primary);border-color:var(--primary)}
-.intake-count{font-family:var(--display);font-size:12.5px;color:var(--muted);
-  flex:0 0 44px;text-align:right}
-/* одна отметка для позиций, которые меряют не дозами, а граммами */
-.dose-one{flex:0 0 auto;padding:6px 13px;border-radius:99px;border:2px solid var(--line);
-  background:var(--bg);font-family:var(--body);font-size:12.5px;color:var(--muted);font-weight:600}
-.dose-one:hover{border-color:var(--primary);color:var(--primary)}
-.dose-one.on{background:var(--primary);border-color:var(--primary);color:#fff}
-.intake-name .mini{display:block;font-weight:400}
-@media(max-width:520px){
-  .intake-name{flex:1 1 100%;order:1}
-  .intake-row{flex-wrap:wrap;gap:6px 10px}
-  .intake-dots{order:2}
-  /* порядок нужен и одиночной отметке: без него она вставала ПЕРЕД
-     названием, потому что по умолчанию порядок равен нулю */
-  .dose-one{order:2}
-  .intake-count{order:3;margin-left:auto;flex:0 0 auto}
-}
+.in-one{flex:0 0 auto;padding:4px 11px;border-radius:99px;border:1.5px solid var(--line);
+  background:var(--bg);font-family:var(--body);font-size:12px;color:var(--muted);font-weight:600}
+.in-one:hover{border-color:var(--primary);color:var(--primary)}
+.in-one.on{background:var(--primary);border-color:var(--primary);color:#fff;padding:4px 9px}
+.in-note{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45}
 
 /* longevity — научная лента внизу обзора.
    Оформление сдержанное: это фон для чтения, а не ваши показатели. */
@@ -844,6 +849,9 @@ function migrate(){
   if(!Array.isArray(state.foods)){ state.foods=[]; ch=true; }
   /* дневник тренировок: пустой у всех, кто обновился с прежней версии */
   if(!Array.isArray(state.workoutLog)){ state.workoutLog=[]; ch=true; }
+  /* настройки вида: что развёрнуто, что свёрнуто. Не данные о здоровье, но
+     хранятся рядом — так переносятся вместе с ними на другое устройство. */
+  if(!state.ui || typeof state.ui!=="object"){ state.ui={}; ch=true; }
   /* отметки приёма по дням. intakeFrom намеренно не заполняем: он появится
      в день первой отметки, и до этого дня остаток считается по плану, как
      раньше. Поставить его сегодня задним числом значило бы объявить, что
@@ -3811,7 +3819,7 @@ function renderIntake(){
 
   if(!позиции.length){ el.innerHTML=""; el.className=""; return; }
 
-  /* В счётчике сверху позиция с граммами весит одну отметку, а не тридцать:
+  /* В счётчике позиция с граммами весит одну отметку, а не тридцать:
      иначе «0 из 40» — это на 3/4 протеин, и число теряет смысл. */
   const единиц=v=>v.perDay>ПРИЁМ_МАКС_ТОЧЕК?1:v.perDay;
   const сделано=v=>v.perDay>ПРИЁМ_МАКС_ТОЧЕК
@@ -3819,21 +3827,29 @@ function renderIntake(){
     : Math.min(принятоСегодня(v),v.perDay);
   const всегоДоз=позиции.reduce((s,v)=>s+единиц(v),0);
   const принято=позиции.reduce((s,v)=>s+сделано(v),0);
+  const всёПринято=принято>=всегоДоз;
 
-  const строки=позиции.map(v=>{
+  /* Незакрытые позиции — наверх. Принятые опускаются и гаснут: смысл блока
+     в том, что осталось сделать, а не в перечислении сделанного. */
+  const порядок=позиции.slice().sort((a,b)=>
+    (сделано(a)>=единиц(a)?1:0)-(сделано(b)>=единиц(b)?1:0));
+
+  /* Свёрнутое состояние. Когда всё принято, блок сворачивается сам: он
+     занимал почти весь экран телефона, хотя дела на сегодня уже нет.
+     Развёрнутость запоминаем, чтобы решение человека не сбрасывалось. */
+  const развёрнут = state.ui && state.ui.приёмРазвёрнут!==undefined
+    ? state.ui.приёмРазвёрнут : !всёПринято;
+
+  const строки=порядок.map(v=>{
     const n=принятоСегодня(v);
+    const готово=сделано(v)>=единиц(v);
 
-    /* Точки — только для считаемых доз. У протеина «приём в день» равен 30,
-       потому что это граммы порции, а не таблетки: панель нарисовала бы
-       тридцать точек. Для таких позиций — одна отметка «принял», которая
-       записывает всю дневную норму. */
     if(v.perDay>ПРИЁМ_МАКС_ТОЧЕК){
-      const отмечено=n>0;
-      return `<div class="intake-row">
-        <span class="intake-name">${esc(v.name)}
-          <span class="mini">${v.perDay} ${esc(единицаПриёма(v))} в день</span></span>
-        <button class="dose-one${отмечено?" on":""}"
-          onclick="отметитьПриём('${v.id}',${отмечено?0:v.perDay})">${отмечено?"принято":"отметить"}</button>
+      /* граммы и миллилитры дозами не считают — одна отметка на день */
+      return `<div class="in-row${готово?" done":""}">
+        <span class="in-name">${esc(v.name)}<span class="in-sub">${v.perDay} ${esc(единицаПриёма(v))}</span></span>
+        <button class="in-one${готово?" on":""}"
+          onclick="отметитьПриём('${v.id}',${готово?0:v.perDay})">${готово?"✓":"отметить"}</button>
         </div>`;
     }
 
@@ -3842,22 +3858,39 @@ function renderIntake(){
       return `<button class="dose${номер<=n?" on":""}" title="принято ${номер} из ${v.perDay}"
         onclick="отметитьПриём('${v.id}',${номер})"></button>`;
     }).join("");
-    return `<div class="intake-row">
-      <span class="intake-name">${esc(v.name)}</span>
-      <span class="intake-dots">${точки}</span>
-      <span class="intake-count">${n} / ${v.perDay}</span></div>`;
+    return `<div class="in-row${готово?" done":""}">
+      <span class="in-name">${esc(v.name)}</span>
+      <span class="in-dots">${точки}</span></div>`;
   }).join("");
 
-  el.className="panel intake";
-  el.innerHTML=`<div class="panel-head">
-      <h2>Приём сегодня</h2>
-      <span class="intake-total${принято>=всегоДоз?" done":""}">${принято} из ${всегоДоз}</span>
-    </div>
-    <div class="panel-body">${строки}
-      <div class="mini" style="margin-top:8px">${остатокПоФакту()
-        ? "Остаток считается по этим отметкам."
-        : "Пока отметок нет, остаток считается по плану приёма. С первой отметки — по факту."}</div>
-    </div>`;
+  const доля=всегоДоз?Math.round((принято/всегоДоз)*100):0;
+
+  el.className="intake-card"+(всёПринято?" all-done":"");
+  el.innerHTML=`
+    <button class="in-head" onclick="переключитьПриём()" aria-expanded="${развёрнут}">
+      <span class="in-title">Приём сегодня</span>
+      <span class="in-progress"><i style="width:${доля}%"></i></span>
+      <span class="in-count${всёПринято?" done":""}">${принято} из ${всегоДоз}</span>
+      <span class="in-chev">${развёрнут?"▲":"▼"}</span>
+    </button>
+    ${развёрнут?`<div class="in-body">${строки}
+      <div class="in-note">${остатокПоФакту()
+        ? "Остаток препаратов считается по этим отметкам."
+        : "Пока отметок нет, остаток считается по плану. С первой отметки — по факту."}</div>
+    </div>`:""}`;
+}
+
+async function переключитьПриём(){
+  if(!state.ui||typeof state.ui!=="object") state.ui={};
+  const позиции=state.vitamins.filter(v=>
+    v.status!=="ordered" && !v.needsDose && !v.needsStock && v.perDay>0);
+  const единиц=v=>v.perDay>ПРИЁМ_МАКС_ТОЧЕК?1:v.perDay;
+  const сделано=v=>v.perDay>ПРИЁМ_МАКС_ТОЧЕК?(принятоСегодня(v)>0?1:0):Math.min(принятоСегодня(v),v.perDay);
+  const всёПринято=позиции.reduce((s,v)=>s+сделано(v),0)>=позиции.reduce((s,v)=>s+единиц(v),0);
+  const было=state.ui.приёмРазвёрнут!==undefined?state.ui.приёмРазвёрнут:!всёПринято;
+  state.ui.приёмРазвёрнут=!было;
+  await save();
+  renderIntake();
 }
 async function отметитьПриём(id, номер){
   const v=state.vitamins.find(x=>x.id===id);
