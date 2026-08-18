@@ -273,6 +273,11 @@ tr:last-child td{border-bottom:none}
   text-decoration:underline;text-underline-offset:2px;padding:0}
 .linkbtn:hover{opacity:.75}
 
+/* заголовки внутри окна предпросмотра импорта */
+.imp-h{font-family:var(--display);font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin:16px 0 6px}
+.imp-h:first-of-type{margin-top:0}
+
 /* выбор разделов для выгрузки специалисту */
 .sh-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .sh-row{display:flex;align-items:center;gap:10px;padding:9px 12px;
@@ -1612,21 +1617,196 @@ async function saveMetric(){const g=id=>{const v=document.getElementById(id).val
   const rec={date:val("m_date"),recovery:g("m_rec"),hrv:g("m_hrv"),rhr:g("m_rhr"),sleep:g("m_sleep"),strain:g("m_strain")};
   state.metrics=state.metrics.filter(x=>x.date!==rec.date);state.metrics.push(rec);await done();}
 
-function openImport(){show(`<div class="modal-head"><h3>Импорт CSV (Whoop)</h3></div>
+/* ---------- приём выгрузки Whoop ----------
+
+   Раньше требовались точные названия колонок: date, recovery, hrv, rhr,
+   sleep, strain. Файл из письма Whoop называет их иначе — «Recovery score %»,
+   «Heart rate variability (ms)», «Cycle start time». То есть каждую неделю
+   пришлось бы переименовывать колонки руками, а значит этим бы не пользовались.
+
+   Теперь колонки узнаются по смыслу, а не по точному совпадению. И перед
+   записью показывается, что с чем сопоставилось: молча угадывать в
+   медицинских данных нельзя — лучше показать и дать проверить. */
+
+/* Разбор CSV с учётом кавычек: в выгрузках попадаются поля вида
+   "Sleep, deep (min)", и разбиение простым split по запятой их ломает. */
+function разобратьCSV(текст){
+  const строки=[]; let поле="", строка=[], вКавычках=false;
+  for(let i=0;i<текст.length;i++){
+    const с=текст[i];
+    if(вКавычках){
+      if(с==='"'){ if(текст[i+1]==='"'){ поле+='"'; i++; } else вКавычках=false; }
+      else поле+=с;
+    } else if(с==='"'){ вКавычках=true; }
+    else if(с===","){ строка.push(поле); поле=""; }
+    else if(с==="\n"){ строка.push(поле); строки.push(строка); строка=[]; поле=""; }
+    else if(с!=="\r"){ поле+=с; }
+  }
+  if(поле!=="" || строка.length){ строка.push(поле); строки.push(строка); }
+  return строки.filter(с=>с.some(з=>String(з).trim()!==""));
+}
+
+/* Правила узнавания. Порядок важен: «Sleep performance %» тоже содержит
+   слово sleep, поэтому длительность сна ищем сначала по точным признакам. */
+const ПРАВИЛА_WHOOP=[
+  {поле:"date", имя:"Дата", признаки:[/cycle\s*start/i,/\bdate\b/i,/start\s*time/i,/\bday\b/i]},
+  {поле:"recovery", имя:"Recovery", признаки:[/recovery\s*score/i,/\brecovery\b/i]},
+  {поле:"hrv", имя:"HRV", признаки:[/heart\s*rate\s*variability/i,/\bhrv\b/i]},
+  {поле:"rhr", имя:"Пульс покоя", признаки:[/resting\s*heart\s*rate/i,/\brhr\b/i]},
+  {поле:"sleep", имя:"Сон", признаки:[/asleep\s*duration/i,/sleep\s*duration/i,/hours\s*of\s*sleep/i,/time\s*asleep/i,/\bsleep\b/i]},
+  {поле:"strain", имя:"Strain", признаки:[/day\s*strain/i,/\bstrain\b/i]},
+];
+
+/* Колонки вроде «Sleep performance %» не должны попасть в длительность сна. */
+const НЕ_ДЛИТЕЛЬНОСТЬ=/performance|efficiency|consistency|need|debt|score|%/i;
+
+function сопоставитьКолонки(заголовки){
+  const карта={};
+  ПРАВИЛА_WHOOP.forEach(п=>{
+    for(const признак of п.признаки){
+      const i=заголовки.findIndex((з,к)=>{
+        if(Object.values(карта).includes(к)) return false;
+        if(!признак.test(з)) return false;
+        if(п.поле==="sleep" && НЕ_ДЛИТЕЛЬНОСТЬ.test(з)) return false;
+        return true;
+      });
+      if(i>=0){ карта[п.поле]=i; break; }
+    }
+  });
+  return карта;
+}
+
+/* Дата приходит как «2026-07-14», «2026-07-14 06:12:00», «2026/07/14»
+   или «14.07.2026». Приводим к ГГГГ-ММ-ДД или отказываемся. */
+function датаИзCSV(значение){
+  const s=String(значение||"").trim();
+  let м=s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if(м) return м[1]+"-"+String(м[2]).padStart(2,"0")+"-"+String(м[3]).padStart(2,"0");
+  м=s.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if(м) return м[3]+"-"+String(м[2]).padStart(2,"0")+"-"+String(м[1]).padStart(2,"0");
+  return null;
+}
+
+/* Сон Whoop отдаёт в минутах. Считаем минутами, если это сказано в названии
+   колонки или если значение больше 20: столько часов подряд не спят, а 20
+   минут сна как суточный итог не бывает. */
+function часыСна(значение, заголовок){
+  const v=parseFloat(String(значение).replace(",","."));
+  if(isNaN(v)) return null;
+  const вМинутах=/\bmin\b|минут/i.test(заголовок||"") || v>20;
+  return вМинутах ? Math.round((v/60)*10)/10 : Math.round(v*10)/10;
+}
+
+let импортЧерновик=null;
+
+function openImport(){
+  show(`<div class="modal-head"><h3>Загрузить данные Whoop</h3></div>
   <div class="modal-body">
-    <div class="hint">Вставьте CSV из экспорта Whoop. Нужны колонки-заголовки: <b>date, recovery, hrv, rhr, sleep, strain</b> (лишние игнорируются). Разделитель — запятая.</div>
-    <div class="field"><textarea id="csv" rows="7" placeholder="date,recovery,hrv,rhr,sleep,strain&#10;2026-07-14,66,52,56,6.6,13.1"></textarea></div>
+    <div class="hint" style="margin-top:0">В приложении WHOOP: меню внизу справа →
+      <b>Data Export</b> → период → Export. Придёт письмо со ссылкой на файл CSV.
+      Скачайте его и выберите здесь — переименовывать колонки не нужно.</div>
+    <div class="field">
+      <label>Файл из письма Whoop</label>
+      <input type="file" id="csvFile" accept=".csv,text/csv" onchange="файлWhoop(this)">
+    </div>
+    <div class="field"><label>Или вставьте содержимое вручную</label>
+      <textarea id="csv" rows="5" placeholder="Cycle start time,Recovery score %,Heart rate variability (ms)…"></textarea></div>
     <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
-      <button class="btn" onclick="doImport()">Импортировать</button></div></div>`);}
-async function doImport(){const raw=document.getElementById("csv").value.trim();if(!raw){closeModal();return;}
-  const lines=raw.split(/\r?\n/).filter(Boolean);const hdr=lines[0].toLowerCase().split(",").map(s=>s.trim());
-  const idx=n=>hdr.indexOf(n);const gi={date:idx("date"),recovery:idx("recovery"),hrv:idx("hrv"),rhr:idx("rhr"),sleep:idx("sleep"),strain:idx("strain")};
-  if(gi.date<0){alert("Не найдена колонка date в заголовке.");return;}
-  let added=0;lines.slice(1).forEach(ln=>{const c=ln.split(",");const d=(c[gi.date]||"").trim();if(!d)return;
-    const num=i=>i>=0&&c[i]!==undefined&&c[i].trim()!==""?parseFloat(c[i]):null;
-    state.metrics=state.metrics.filter(x=>x.date!==d);
-    state.metrics.push({date:d,recovery:num(gi.recovery),hrv:num(gi.hrv),rhr:num(gi.rhr),sleep:num(gi.sleep),strain:num(gi.strain)});added++;});
-  await save();closeModal();renderAll();
+      <button class="btn" onclick="разобратьВставленное()">Разобрать</button></div></div>`);
+}
+
+async function файлWhoop(input){
+  const f=input.files&&input.files[0];
+  if(!f) return;
+  let текст;
+  try{ текст=await f.text(); }
+  catch(e){ alert("Не удалось прочитать файл."); return; }
+  показатьПредпросмотр(текст, f.name);
+}
+function разобратьВставленное(){
+  const текст=document.getElementById("csv").value.trim();
+  if(!текст){ alert("Выберите файл или вставьте содержимое."); return; }
+  показатьПредпросмотр(текст, "вставленный текст");
+}
+
+function показатьПредпросмотр(текст, откуда){
+  const строки=разобратьCSV(текст);
+  if(строки.length<2){ alert("В файле нет данных: нужна строка заголовков и хотя бы одна строка значений."); return; }
+  const заголовки=строки[0].map(з=>String(з).trim());
+  const карта=сопоставитьКолонки(заголовки);
+
+  if(карта.date===undefined){
+    alert("Не нашла колонку с датой. Проверьте, что это файл выгрузки Whoop.");
+    return;
+  }
+
+  const записи=[]; let безДаты=0;
+  строки.slice(1).forEach(с=>{
+    const д=датаИзCSV(с[карта.date]);
+    if(!д){ безДаты++; return; }
+    const чис=(поле)=>{
+      const i=карта[поле];
+      if(i===undefined || с[i]===undefined || String(с[i]).trim()==="") return null;
+      const v=parseFloat(String(с[i]).replace(",","."));
+      return isNaN(v)?null:v;
+    };
+    записи.push({date:д, recovery:чис("recovery"), hrv:чис("hrv"), rhr:чис("rhr"),
+      sleep: карта.sleep!==undefined ? часыСна(с[карта.sleep], заголовки[карта.sleep]) : null,
+      strain:чис("strain")});
+  });
+
+  /* одна дата может встретиться дважды — оставляем последнюю */
+  const поДатам={}; записи.forEach(з=>{ поДатам[з.date]=з; });
+  const итоговые=Object.values(поДатам).sort((a,b)=>a.date<b.date?1:-1);
+  импортЧерновик=итоговые;
+
+  if(!итоговые.length){ alert("Ни одной строки с распознанной датой."); return; }
+
+  const сопоставление=ПРАВИЛА_WHOOP.map(п=>{
+    const i=карта[п.поле];
+    return "<tr><td>"+esc(п.имя)+"</td><td>"+(i===undefined
+      ? '<span class="mini">не найдено</span>'
+      : "<b>"+esc(заголовки[i])+"</b>")+"</td></tr>";
+  }).join("");
+
+  const примеры=итоговые.slice(0,3).map(з=>"<tr><td>"+esc(з.date)+"</td>"
+    +'<td class="num">'+(з.recovery??"—")+"</td>"
+    +'<td class="num">'+(з.hrv??"—")+"</td>"
+    +'<td class="num">'+(з.rhr??"—")+"</td>"
+    +'<td class="num">'+(з.sleep??"—")+"</td>"
+    +'<td class="num">'+(з.strain??"—")+"</td></tr>").join("");
+
+  const новых=итоговые.filter(з=>!state.metrics.some(m=>m.date===з.date)).length;
+
+  showWide(`<div class="modal-head"><h3>Проверьте, что распознано</h3></div>
+  <div class="modal-body">
+    <div class="mini" style="margin-bottom:10px">Источник: ${esc(откуда)} ·
+      строк с данными: <b>${итоговые.length}</b>${безДаты?" · пропущено без даты: "+безДаты:""} ·
+      из них новых: <b>${новых}</b>, обновятся: <b>${итоговые.length-новых}</b></div>
+
+    <div class="imp-h">Какая колонка чем оказалась</div>
+    <table><thead><tr><th>Показатель</th><th>Колонка в файле</th></tr></thead><tbody>${сопоставление}</tbody></table>
+
+    <div class="imp-h">Первые три записи</div>
+    <table><thead><tr><th>Дата</th><th>Recov.</th><th>HRV</th><th>Пульс</th><th>Сон</th><th>Strain</th></tr></thead>
+      <tbody>${примеры}</tbody></table>
+    <div class="mini" style="margin-top:8px">Сон приведён к часам. Если цифры не похожи на правду —
+      не записывайте, покажите файл мне.</div>
+
+    <div class="modal-foot"><button class="btn line" onclick="openImport()">Назад</button>
+      <button class="btn" onclick="применитьИмпортWhoop()">Записать ${итоговые.length}</button></div></div>`);
+}
+
+async function применитьИмпортWhoop(){
+  if(!импортЧерновик||!импортЧерновик.length){ closeModal(); return; }
+  импортЧерновик.forEach(з=>{
+    state.metrics=state.metrics.filter(m=>m.date!==з.date);
+    state.metrics.push(з);
+  });
+  const сколько=импортЧерновик.length;
+  импортЧерновик=null;
+  await save(); closeModal(); renderAll();
+  alert("Записано записей: "+сколько);
 }
 
 function upsert(kind,o){const i=state[kind].findIndex(x=>x.id===o.id);if(i>=0)state[kind][i]=o;else state[kind].push(o);}
