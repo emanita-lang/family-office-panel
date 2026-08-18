@@ -278,6 +278,19 @@ tr:last-child td{border-bottom:none}
   color:var(--muted);font-weight:600;margin:16px 0 6px}
 .imp-h:first-of-type{margin-top:0}
 
+/* поиск в базе продуктов */
+.fd-search{display:flex;gap:6px;margin-bottom:10px}
+.fd-search input{flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line);
+  border-radius:9px;font-family:var(--body);font-size:13.5px;color:var(--ink);background:var(--bg)}
+.fd-found{display:grid;gap:6px;margin-bottom:12px}
+.fd-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
+  text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:9px 11px;font-family:var(--body)}
+.fd-item:hover{border-color:var(--primary)}
+.fd-item-name{font-size:13px;font-weight:600;color:var(--ink)}
+.fd-item-brand{color:var(--muted);font-weight:400;margin-left:6px;font-size:12px}
+.fd-item-vals{font-family:var(--display);font-size:11.5px;color:var(--muted)}
+
 /* выбор разделов для выгрузки специалисту */
 .sh-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .sh-row{display:flex;align-items:center;gap:10px;padding:9px 12px;
@@ -2405,6 +2418,14 @@ function renderFoods(){
 
   return `<div class="modal-head"><h3>Мои продукты</h3></div>
   <div class="modal-body">
+    <div class="fd-search">
+      <input id="fd_code" inputmode="numeric" placeholder="Штрихкод с упаковки, 8–13 цифр"
+        onkeydown="if(event.key==='Enter')искатьПродукт()">
+      <button class="btn small" onclick="искатьПродукт()">Найти</button>
+    </div>
+    <div class="mini" style="margin:-4px 0 10px">Введите цифры под полосками — панель подставит КБЖУ
+      из открытой базы. Поиск по названию у базы отказывает, поэтому по коду надёжнее.</div>
+    <div id="fd_results"></div>
     <div class="food-list">${строки}</div>
 
     <div class="food-form">
@@ -4150,6 +4171,133 @@ async function importData(input){
   renderAll();
   renderStorageNote();
   alert("Данные загружены.");
+}
+
+/* ---------- продукт по штрихкоду ----------
+
+   Источник — Open Food Facts, открытая база упаковок. Ключей не требует.
+
+   Почему по штрихкоду, а не по названию. Поиск по названию у них жёстко
+   ограничен по частоте и из браузера отказывает: проверено — оба поисковых
+   адреса отвечают отказом, тогда как обращение по штрихкоду возвращает
+   товар. Обещать поиск, который срабатывает раз через раз, нельзя: человек
+   решит, что панель сломана.
+
+   Штрихкод к тому же надёжнее названия. «Творог» в базе — сотни записей
+   разного жира и производителя, и выбирать пришлось бы наугад. Код с
+   упаковки указывает ровно на то, что человек держит в руках.
+
+   Найденное не записывается молча: подставляется в поля, чтобы человек
+   увидел цифры и сверил с упаковкой. База заполняется пользователями,
+   ошибки в ней встречаются. */
+
+const OFF_ТОВАР="https://world.openfoodfacts.org/api/v2/product/";
+const OFF_ОЖИДАНИЕ=12000;
+const офКэш={};
+let офИдёт=false;
+
+async function искатьПродукт(){
+  const поле=document.getElementById("fd_code");
+  const где=document.getElementById("fd_results");
+  if(!поле||!где) return;
+  const код=поле.value.replace(/\D/g,"");
+
+  if(код.length<8||код.length>14){
+    где.innerHTML=`<div class="mini">Штрихкод — это 8–13 цифр под полосками на упаковке.
+      Введено цифр: ${код.length}.</div>`;
+    return;
+  }
+  if(офИдёт) return;
+  if(офКэш[код]){ показатьНайденное(офКэш[код], код); return; }
+
+  офИдёт=true;
+  где.innerHTML=`<div class="lg-loading"><span class="spin sm"></span> Ищу код ${esc(код)}…</div>`;
+
+  const ctrl=new AbortController();
+  const таймер=setTimeout(()=>ctrl.abort(),OFF_ОЖИДАНИЕ);
+  try{
+    const ответ=await fetch(OFF_ТОВАР+encodeURIComponent(код)
+      +".json?fields=product_name,product_name_ru,brands,quantity,nutriments",{signal:ctrl.signal});
+    /* Неизвестный штрихкод база отдаёт с кодом 404 — это ответ «нет такого
+       товара», а не обрыв связи. Раньше он превращался в сообщение про
+       отсутствие сети, и человек искал проблему не там. */
+    if(!ответ.ok && ответ.status!==404) throw new Error("HTTP "+ответ.status);
+    const данные=await ответ.json().catch(()=>({status:0}));
+
+    if(данные.status!==1||!данные.product){
+      где.innerHTML=`<div class="mini">Такого кода в базе нет — она заполняется людьми,
+        и российских товаров в ней немного. Внесите продукт руками ниже: значения есть на упаковке.</div>`;
+      офКэш[код]=null;
+      return;
+    }
+    const п=данные.product, н=п.nutriments||{};
+    const полно=н["energy-kcal_100g"]!=null&&н.proteins_100g!=null&&н.fat_100g!=null&&н.carbohydrates_100g!=null;
+    if(!полно){
+      где.innerHTML=`<div class="mini">Товар нашёлся (${esc(п.product_name_ru||п.product_name||"без названия")}),
+        но в базе не заполнены все значения КБЖУ. Половина цифр хуже, чем ничего —
+        возьмите их с упаковки и внесите руками.</div>`;
+      return;
+    }
+    const товар={
+      имя:(п.product_name_ru||п.product_name||"").trim(),
+      бренд:(п.brands||"").split(",")[0].trim(),
+      объём:(п.quantity||"").trim(), код,
+      kcal:Math.round(н["energy-kcal_100g"]),
+      p:Math.round(н.proteins_100g*10)/10,
+      f:Math.round(н.fat_100g*10)/10,
+      c:Math.round(н.carbohydrates_100g*10)/10
+    };
+    офКэш[код]=товар;
+    показатьНайденное(товар, код);
+  }catch(e){
+    где.innerHTML=`<div class="mini">${e&&e.name==="AbortError"
+      ? "База не ответила вовремя."
+      : "Не удалось обратиться к базе продуктов — возможно, нет сети."}
+      Значения можно внести руками ниже.</div>`;
+  }finally{
+    clearTimeout(таймер); офИдёт=false;
+  }
+}
+
+let офТовар=null;
+
+function показатьНайденное(товар, код){
+  const где=document.getElementById("fd_results");
+  if(!где) return;
+  if(!товар){
+    где.innerHTML=`<div class="mini">Кода ${esc(код)} в базе нет. Внесите продукт руками ниже.</div>`;
+    return;
+  }
+  офТовар=товар;
+  где.innerHTML=`<div class="fd-found">
+    <button class="fd-item" onclick="взятьНайденное()">
+      <span class="fd-item-name">${esc(товар.имя||"без названия")}${
+        товар.бренд?`<span class="fd-item-brand">${esc(товар.бренд)}</span>`:""}</span>
+      <span class="fd-item-vals">на 100 г: ${товар.kcal} ккал · Б${товар.p} Ж${товар.f} У${товар.c}${
+        товар.объём?" · упаковка "+esc(товар.объём):""}</span>
+    </button></div>
+    <div class="mini" style="margin:0 0 10px">Нажмите, чтобы подставить в поля ниже.
+      Сверьте с упаковкой перед сохранением — база заполняется людьми.</div>`;
+}
+
+function взятьНайденное(){
+  const п=офТовар;
+  if(!п) return;
+  foodEditId=null;
+  перерисоватьПродукты();
+  const поставить=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
+  /* бренд добавляем только если его нет в названии: база часто пишет
+     «Nutella» и в имени, и в бренде, и выходило «Nutella · Nutella» */
+  /* сравниваем без знаков и регистра: «Coca Cola» и «Coca-Cola» — одно и то
+     же, а дословное сравнение давало «Coca Cola · Coca-Cola» */
+  const без=s=>String(s||"").toLowerCase().replace(/[^0-9a-zа-яё]/gi,"");
+  const бренд = п.бренд && !без(п.имя).includes(без(п.бренд)) ? " · "+п.бренд : "";
+  поставить("fd_name", п.имя+бренд);
+  поставить("fd_kcal", п.kcal); поставить("fd_p", п.p);
+  поставить("fd_f", п.f); поставить("fd_c", п.c);
+  поставить("fd_src", "Open Food Facts, код "+п.код);
+  const у=document.getElementById("fd_unit"); if(у){ у.value="g"; переключитьЕдиницуПродукта(); }
+  const имя=document.getElementById("fd_name"); if(имя) имя.scrollIntoView({block:"center"});
 }
 
 /* ---------- отчёт для специалиста ----------
