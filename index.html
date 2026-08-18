@@ -878,6 +878,11 @@ function migrate(){
   /* настройки вида: что развёрнуто, что свёрнуто. Не данные о здоровье, но
      хранятся рядом — так переносятся вместе с ними на другое устройство. */
   if(!state.ui || typeof state.ui!=="object"){ state.ui={}; ch=true; }
+  /* Список загруженных документов. Сами файлы лежат в отдельном хранилище
+     браузера (IndexedDB), здесь — только описание: имя, размер, дата.
+     Так список переносится вместе с данными, а тяжёлые файлы не раздувают
+     выгрузку до десятков мегабайт. */
+  if(!Array.isArray(state.documents)){ state.documents=[]; ch=true; }
   /* отметки приёма по дням. intakeFrom намеренно не заполняем: он появится
      в день первой отметки, и до этого дня остаток считается по плану, как
      раньше. Поставить его сегодня задним числом значило бы объявить, что
@@ -1106,7 +1111,8 @@ function renderCalendar(){
 /* ---------- tabs / modules ---------- */
 const MAIN_TABS=[
   {k:"vitamins",name:"Витамины"},{k:"labs",name:"Анализы"},
-  {k:"doctors",name:"Врачи"},{k:"schedule",name:"Расписание"},{k:"metrics",name:"Параметры"},
+  {k:"doctors",name:"Врачи"},{k:"documents",name:"Документы"},
+  {k:"schedule",name:"Расписание"},{k:"metrics",name:"Параметры"},
 ];
 const FIT_TABS=[{k:"workouts",name:"Тренировки"},{k:"nutrition",name:"Питание"}];
 function tabCount(k){
@@ -1137,6 +1143,7 @@ function renderTabBody(){
   if(activeTab==="vitamins")b.innerHTML=vitTable();
   else if(activeTab==="labs")b.innerHTML=labTable();
   else if(activeTab==="doctors")b.innerHTML=docTable();
+  else if(activeTab==="documents"){b.innerHTML=docsTable();дописатьМесто();}
   else if(activeTab==="schedule")b.innerHTML=schedTable();
   else b.innerHTML=metricTable();
 }
@@ -1616,6 +1623,166 @@ function openMetric(){show(`<div class="modal-head"><h3>Запись парам�
 async function saveMetric(){const g=id=>{const v=document.getElementById(id).value;return v===""?null:parseFloat(v);};
   const rec={date:val("m_date"),recovery:g("m_rec"),hrv:g("m_hrv"),rhr:g("m_rhr"),sleep:g("m_sleep"),strain:g("m_strain")};
   state.metrics=state.metrics.filter(x=>x.date!==rec.date);state.metrics.push(rec);await done();}
+
+/* ---------- хранение оригиналов документов ----------
+
+   Зачем. Панель извлекала из PDF цифры и сам файл выбрасывала. Значит через
+   месяц нельзя проверить, откуда взялось значение: заключение потеряно, а
+   доверять придётся тому, что панель однажды распознала. В медицинских
+   данных так нельзя.
+
+   Где лежит. Файлы — в IndexedDB: это хранилище браузера, рассчитанное на
+   большие объёмы, в отличие от localStorage с его лимитом в несколько
+   мегабайт. Описание файла (имя, размер, дата) хранится рядом с остальными
+   данными, поэтому список переносится вместе с ними, а сами файлы — нет:
+   иначе выгрузка для копии распухла бы до десятков мегабайт.
+
+   Про переполнение. Место в браузере не бесконечно. Когда оно кончается,
+   IndexedDB отвечает ошибкой квоты — её ловим и говорим человеку понятным
+   текстом, сколько занято и что удалить. Молчать здесь нельзя: человек
+   решит, что документ сохранён, а его нет. */
+
+const ФАЙЛЫ_БД="ko-health-files";
+const ФАЙЛЫ_ХРАН="файлы";
+
+function открытьХранилище(){
+  return new Promise((решить,отклонить)=>{
+    if(!window.indexedDB) return отклонить(new Error("в этом браузере нет хранилища файлов"));
+    const запрос=indexedDB.open(ФАЙЛЫ_БД,1);
+    запрос.onupgradeneeded=()=>{
+      const бд=запрос.result;
+      if(!бд.objectStoreNames.contains(ФАЙЛЫ_ХРАН)) бд.createObjectStore(ФАЙЛЫ_ХРАН);
+    };
+    запрос.onsuccess=()=>решить(запрос.result);
+    запрос.onerror=()=>отклонить(запрос.error||new Error("не удалось открыть хранилище"));
+  });
+}
+
+function действиеСХранилищем(режим, дело){
+  return открытьХранилище().then(бд=>new Promise((решить,отклонить)=>{
+    const сделка=бд.transaction(ФАЙЛЫ_ХРАН,режим);
+    const хран=сделка.objectStore(ФАЙЛЫ_ХРАН);
+    let итог;
+    try{ итог=дело(хран); }catch(e){ отклонить(e); return; }
+    сделка.oncomplete=()=>решить(итог&&итог.result!==undefined?итог.result:итог);
+    сделка.onerror=()=>отклонить(сделка.error||new Error("ошибка хранилища"));
+    сделка.onabort=()=>отклонить(сделка.error||new Error("операция отменена"));
+  }));
+}
+
+const положитьФайл=(id,файл)=>действиеСХранилищем("readwrite",х=>х.put(файл,id));
+function взятьФайл(id){
+  return открытьХранилище().then(бд=>new Promise((решить,отклонить)=>{
+    const сделка=бд.transaction(ФАЙЛЫ_ХРАН,"readonly");
+    const запрос=сделка.objectStore(ФАЙЛЫ_ХРАН).get(id);
+    запрос.onsuccess=()=>решить(запрос.result||null);
+    запрос.onerror=()=>отклонить(запрос.error||new Error("не удалось прочитать файл"));
+  }));
+}
+const убратьФайл=(id)=>действиеСХранилищем("readwrite",х=>х.delete(id));
+
+/* Сколько места занято и сколько разрешено. Браузеры отдают оценку, а не
+   точное число, поэтому подписываем «примерно». */
+async function местоВХранилище(){
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const о=await navigator.storage.estimate();
+      return {занято:о.usage||0, доступно:о.quota||0};
+    }
+  }catch(e){}
+  return null;
+}
+
+function размерЧеловечески(байт){
+  if(!байт) return "0 КБ";
+  if(байт<1048576) return Math.round(байт/1024)+" КБ";
+  return (Math.round(байт/1048576*10)/10)+" МБ";
+}
+
+/* Сохранение с понятным разбором отказа. */
+async function сохранитьОригинал(файл, типДокумента){
+  const id="doc-"+u()+"-"+Date.now();
+  try{
+    await положитьФайл(id, файл);
+  }catch(e){
+    const квота=/quota/i.test(e&&e.name||"")||/quota/i.test(e&&e.message||"");
+    const место=await местоВХранилище();
+    alert(квота
+      ? "Не хватило места в браузере, документ не сохранён.\n\n"
+        + (место?`Занято примерно ${размерЧеловечески(место.занято)} из ${размерЧеловечески(место.доступно)}.\n\n`:"")
+        + "Откройте «Документы» и удалите то, что больше не нужно. "
+        + "Данные из документа при этом останутся — удаляется только файл."
+      : "Не удалось сохранить файл документа: "+(e&&e.message||"неизвестная ошибка")
+        + "\n\nДанные из него можно внести — сохранение оригинала не обязательно.");
+    return null;
+  }
+  const запись={id, имя:файл.name||"без имени", размер:файл.size||0,
+    тип:файл.type||"", дата:iso(today), вид:типДокумента||""};
+  state.documents.push(запись);
+  await save();
+  return запись;
+}
+
+function docsTable(){
+  const список=(state.documents||[]).slice().sort((a,b)=>a.дата<b.дата?1:-1);
+  const всего=список.reduce((s,д)=>s+(д.размер||0),0);
+
+  if(!список.length) return `<div class="row-head"><h3>Документы</h3></div>`
+    + empty("Оригиналов пока нет",
+      "Загрузите PDF кнопкой «+ Документ» — файл сохранится здесь, и потом можно будет проверить, откуда взялась цифра.");
+
+  const строки=список.map(д=>`<tr>
+    <td class="title"><b>${esc(д.имя)}</b>
+      <div class="mini">${esc(размерЧеловечески(д.размер))}${д.вид?" · "+esc(д.вид):""}</div></td>
+    <td class="num" data-label="Загружен">${(()=>{const dt=parse(д.дата);return dt?fmt(dt):esc(д.дата);})()}</td>
+    <td class="acts"><div class="rowbtns">
+      <button class="btn ghost small" onclick="открытьОригинал('${д.id}')">Открыть</button>
+      <button class="iconbtn" onclick="удалитьОригинал('${д.id}')">Удал.</button></div></td></tr>`).join("");
+
+  return `<div class="row-head"><h3>Документы</h3>
+      <span class="mini">${список.length} шт · ${размерЧеловечески(всего)}</span></div>
+    <table class="cards"><thead><tr><th>Файл</th><th>Загружен</th><th></th></tr></thead>
+      <tbody>${строки}</tbody></table>
+    <div class="mini" style="margin-top:10px">Оригиналы лежат в этом браузере и никуда не отправляются.
+      На другом устройстве их не будет: выгрузка данных сами файлы не переносит — они слишком тяжёлые.
+      <span id="docsQuota"></span></div>`;
+}
+
+/* Открываем в новой вкладке из памяти: файл не выкладывается ни на какой
+   сервер, ссылка живёт только в этой вкладке браузера. */
+async function открытьОригинал(id){
+  let файл;
+  try{ файл=await взятьФайл(id); }
+  catch(e){ alert("Не удалось прочитать файл: "+(e&&e.message||"")); return; }
+  if(!файл){
+    alert("Файл не найден в хранилище этого браузера.\n\n"
+      +"Скорее всего, запись перенесена с другого устройства: выгрузка данных "
+      +"переносит список документов, но не сами файлы.");
+    return;
+  }
+  const url=URL.createObjectURL(файл);
+  const окно=window.open(url,"_blank");
+  if(!окно) alert("Браузер заблокировал открытие новой вкладки. Разрешите всплывающие окна для этой страницы.");
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+
+async function удалитьОригинал(id){
+  const д=(state.documents||[]).find(x=>x.id===id);
+  if(!д) return;
+  if(!confirm(`Удалить файл «${д.имя}»?\n\nДанные, которые из него внесены, останутся — удаляется только сам документ.`)) return;
+  try{ await убратьФайл(id); }catch(e){}
+  state.documents=state.documents.filter(x=>x.id!==id);
+  await save(); renderAll();
+}
+
+/* Подпись про занятое место дописывается после отрисовки: оценка приходит
+   асинхронно, и ждать её ради списка незачем. */
+async function дописатьМесто(){
+  const el=document.getElementById("docsQuota");
+  if(!el) return;
+  const м=await местоВХранилище();
+  if(м && м.доступно) el.textContent=`Занято примерно ${размерЧеловечески(м.занято)} из ${размерЧеловечески(м.доступно)}.`;
+}
 
 /* ---------- приём выгрузки Whoop ----------
 
@@ -3544,7 +3711,16 @@ function bindDropzone(){
 async function docFilePicked(input){
   const f=input.files&&input.files[0];
   input.value="";
-  if(f) await readDocFile(f);
+  if(!f) return;
+  await readDocFile(f);
+  /* Оригинал сохраняем для тех форматов, которые панель берётся читать.
+     Фотографии и Word отклоняются раньше — держать файл, из которого ничего
+     не извлекли, значит занимать место без пользы. */
+  if(/\.(pdf|txt|md|csv)$/i.test(f.name||"")){
+    const виды={labs:"анализы",doctor:"заключение врача",order:"заказ препаратов"};
+    const запись=await сохранитьОригинал(f, виды[docKind]||"");
+    if(запись) renderTabs();
+  }
 }
 
 /* Достаёт текст из PDF прямо в браузере.
