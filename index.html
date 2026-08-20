@@ -303,6 +303,10 @@ tr:last-child td{border-bottom:none}
 .partial-note{background:var(--primary-soft);border:1px solid var(--primary);
   border-radius:10px;padding:11px 14px;margin:0 0 16px;font-size:13px;line-height:1.5;color:var(--primary)}
 
+/* предупреждение внутри окна — не тревожный цвет, но заметно */
+.warn-inline{background:var(--attn-soft);border:1px solid #EBD9BF;border-radius:10px;
+  padding:10px 12px;margin-top:10px;font-size:12.5px;line-height:1.5;color:var(--ink)}
+
 /* экран «Сегодня»: тренировки и заметка внизу */
 .tw-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
 .tw-row:last-of-type{border-bottom:none}
@@ -2121,7 +2125,8 @@ function nutTable(){
       <button class="btn ghost small" onclick="openFoods()">Мои продукты${
         (state.foods&&state.foods.length)?` <span class="mini">${state.foods.length}</span>`:""}</button>
       <button class="btn ghost small" onclick="openTarget()">Цели КБЖУ</button>
-      <button class="btn small" onclick="openMeal()">+ Приём пищи</button></div></div>
+      <button class="btn small" onclick="openMeal()">+ Приём пищи</button>
+      <button class="btn small" onclick="openDayTotal()">Итог дня из GPT</button></div></div>
     <div class="nut-datenav">
       <button class="btn line small" onclick="shiftDay(-1)">←</button>
       <div class="nut-date">${fmt(d)} <span class="mini">${["вс","пн","вт","ср","чт","пт","сб"][d.getDay()]}</span></div>
@@ -2247,6 +2252,115 @@ function openTarget(){const t=state.nutrition.targets;show(`<div class="modal-he
     <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
       <button class="btn" onclick="saveTarget()">Сохранить</button></div></div>`);}
 async function saveTarget(){state.nutrition.targets={kcal:numv("t_kcal"),p:numv("t_p"),f:numv("t_f"),c:numv("t_c")};await done();}
+/* ---------- итог дня одной строкой ----------
+
+   Владелец панели ведёт еду в GPT: пишет словами, тот считает. Панель так не
+   умеет и не будет — для разбора текста нужна AI-модель, а её ключ нельзя
+   держать в файле, который открывается по ссылке.
+
+   Но переносить всё заново — двойная работа. Поэтому переносим только итог:
+   GPT его и так выдаёт строкой вида «2150 ккал, белки 145, жиры 70,
+   углеводы 210». Панель разбирает эту строку и записывает одной записью.
+   Никакого AI здесь нет, просто чтение чисел — работает офлайн.
+
+   Зачем это вообще нужно, если GPT уже посчитал: GPT не помнит вчера.
+   Панель накапливает — средние за неделю, столбики по дням, отчёт тренеру. */
+
+/* Ищем число рядом с названием. Порядок важен: «углеводы» проверяем раньше
+   «у», иначе короткая буква поймает не то. */
+const ИТОГ_ПРАВИЛА=[
+  {поле:"kcal", образцы:[/(\d+[.,]?\d*)\s*(?:ккал|kcal|кал\b)/i, /(?:ккал|калори[ий]|kcal|energy)\D{0,12}?(\d+[.,]?\d*)/i]},
+  /* Однобуквенные обозначения Б/Ж/У ищем через «начало строки или не-буква»,
+     а НЕ через \b: граница слова в JavaScript считает словом только латиницу,
+     поэтому «Б145» она не находит вовсе. Та же ловушка уже попадалась на
+     единицах приёма и в разборе выгрузки Whoop. */
+  {поле:"p", образцы:[/(?:белк\w*|протеин\w*|protein)\D{0,12}?(\d+[.,]?\d*)/i, /(\d+[.,]?\d*)\s*г?\s*белк/i, /(?:^|[^А-Яа-яЁёA-Za-z])Б\s*[:\-—]?\s*(\d+[.,]?\d*)/]},
+  {поле:"f", образцы:[/(?:жир\w*|fat)\D{0,12}?(\d+[.,]?\d*)/i, /(\d+[.,]?\d*)\s*г?\s*жир/i, /(?:^|[^А-Яа-яЁёA-Za-z])Ж\s*[:\-—]?\s*(\d+[.,]?\d*)/]},
+  {поле:"c", образцы:[/(?:углевод\w*|carb\w*)\D{0,12}?(\d+[.,]?\d*)/i, /(\d+[.,]?\d*)\s*г?\s*углевод/i, /(?:^|[^А-Яа-яЁёA-Za-z])У\s*[:\-—]?\s*(\d+[.,]?\d*)/]},
+];
+
+function разобратьИтог(текст){
+  const s=String(текст||"");
+  const итог={};
+  ИТОГ_ПРАВИЛА.forEach(п=>{
+    for(const обр of п.образцы){
+      const м=s.match(обр);
+      if(м){ итог[п.поле]=parseFloat(м[1].replace(",",".")); break; }
+    }
+  });
+  /* Последняя попытка для «2150 / 145 / 70 / 210» — четыре числа подряд
+     в привычном порядке К-Б-Ж-У. Берём только если ничего не нашли по
+     названиям: угадывать поверх явно указанного нельзя. */
+  if(итог.kcal===undefined&&итог.p===undefined){
+    const числа=(s.match(/\d+[.,]?\d*/g)||[]).map(x=>parseFloat(x.replace(",",".")));
+    if(числа.length===4){ итог.kcal=числа[0]; итог.p=числа[1]; итог.f=числа[2]; итог.c=числа[3]; итог.угадано=true; }
+  }
+  return итог;
+}
+
+function openDayTotal(){
+  const д=parse(selectedDate);
+  const уже=nutDay().find(m=>m.источник==="итог");
+  show(`<div class="modal-head"><h3>Итог дня из GPT</h3></div>
+  <div class="modal-body">
+    <div class="hint" style="margin-top:0">Спросите в GPT итог за день и вставьте строку сюда.
+      Панель прочитает числа. Понимает «2150 ккал, белки 145, жиры 70, углеводы 210»,
+      «Б145 Ж70 У210» и просто «2150 / 145 / 70 / 210».</div>
+    <div class="field"><label>За ${д?fmt(д):esc(selectedDate)}</label>
+      <textarea id="dt_text" rows="3" placeholder="2150 ккал, белки 145 г, жиры 70 г, углеводы 210 г"></textarea></div>
+    <div id="dt_preview" class="mini"></div>
+    ${уже?`<div class="mini" style="margin-top:8px">За этот день итог уже внесён (${уже.kcal} ккал) — новый заменит его.</div>`:""}
+    ${(()=>{
+      /* Итог складывается с записанными приёмами пищи. Если за день есть и то,
+         и другое, суммы удвоятся — предупреждаем прямо здесь, а не оставляем
+         человека разбираться, почему в дневнике 4290 ккал. */
+      const руками=nutDay().filter(m=>m.источник!=="итог");
+      if(!руками.length) return "";
+      const сумма=руками.reduce((s,m)=>s+(+m.kcal||0),0);
+      return `<div class="warn-inline">За этот день уже записано
+        ${руками.length} ${склонение(руками.length,"приём","приёма","приёмов")} пищи
+        на ${Math.round(сумма)} ккал. Итог <b>сложится с ними</b> — получится двойной счёт.
+        Удалите записи в дневнике или не вносите итог.</div>`;
+    })()}
+    <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
+      <button class="btn" onclick="сохранитьИтогДня()">Записать</button></div></div>`);
+  const поле=document.getElementById("dt_text");
+  if(поле) поле.addEventListener("input",проверитьИтог);
+}
+
+function проверитьИтог(){
+  const где=document.getElementById("dt_preview");
+  const поле=document.getElementById("dt_text");
+  if(!где||!поле) return null;
+  const т=поле.value.trim();
+  if(!т){ где.innerHTML=""; return null; }
+  const р=разобратьИтог(т);
+  const нашли=["kcal","p","f","c"].filter(k=>р[k]!==undefined);
+  if(!нашли.length){
+    где.innerHTML=`<b style="color:var(--attn)">Чисел не нашла.</b> Проверьте, что в строке есть
+      калории и белки-жиры-углеводы.`;
+    return null;
+  }
+  где.innerHTML=`Прочитала: <b>${р.kcal??"—"}</b> ккал · Б <b>${р.p??"—"}</b>
+    · Ж <b>${р.f??"—"}</b> · У <b>${р.c??"—"}</b>
+    ${р.угадано?`<br><span style="color:var(--attn)">Названий не было — взяла четыре числа по порядку
+      К-Б-Ж-У. Проверьте, что порядок такой.</span>`:""}
+    ${нашли.length<4?`<br>Ненайденное запишу нулём.`:""}`;
+  return р;
+}
+
+async function сохранитьИтогДня(){
+  const р=проверитьИтог();
+  if(!р){ alert("Не удалось прочитать числа из строки."); return; }
+  if(!state.nutrition.log[selectedDate]) state.nutrition.log[selectedDate]=[];
+  /* итог заменяет прежний итог, но не трогает записанные вручную приёмы пищи */
+  state.nutrition.log[selectedDate]=state.nutrition.log[selectedDate].filter(m=>m.источник!=="итог");
+  state.nutrition.log[selectedDate].push({id:u(),name:"Итог дня (из GPT)",
+    kcal:Math.round(р.kcal||0), p:Math.round((р.p||0)*10)/10,
+    f:Math.round((р.f||0)*10)/10, c:Math.round((р.c||0)*10)/10, источник:"итог"});
+  await done();
+}
+
 /* ---------- мои продукты ----------
 
    Смысл: люди едят одни и те же тридцать продуктов. Достаточно один раз
