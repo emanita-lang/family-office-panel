@@ -303,7 +303,25 @@ tr:last-child td{border-bottom:none}
 .partial-note{background:var(--primary-soft);border:1px solid var(--primary);
   border-radius:10px;padding:11px 14px;margin:0 0 16px;font-size:13px;line-height:1.5;color:var(--primary)}
 
-/* ---------- приём сегодня ----------
+/* экран «Сегодня»: тренировки и заметка внизу */
+.tw-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.tw-row:last-of-type{border-bottom:none}
+.tw-type{flex:1;font-size:13.5px;font-weight:500;min-width:0}
+.tw-count{font-family:var(--display);font-size:13px;color:var(--muted);flex:0 0 auto}
+.tw-bar{flex:0 0 70px;height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.tw-bar i{display:block;height:100%;background:var(--primary);border-radius:3px}
+.tw-row.done .tw-bar i{background:var(--ok)}
+.tw-row.done .tw-count{color:var(--ok)}
+.tw-week{font-size:12.5px;color:var(--muted);margin-top:10px}
+.tw-lasts{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+.tw-last{font-size:12.5px;color:var(--muted);padding:3px 0}
+.tw-last span{display:inline-block;min-width:56px}
+.tw-last b{color:var(--ink);font-weight:600}
+.today-note{display:block;background:var(--surface);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;margin-top:14px;font-size:12.5px;
+  color:var(--muted);line-height:1.5}
+
+/* ---------- приём сегодня ----------/* ---------- приём сегодня ----------
    Компактно нарочно. Прежний вариант был полноценной панелью на восемь
    строк и занимал 698 пикселей — почти весь экран телефона, и это было
    первое, что видно. Теперь это узкая полоса с прогрессом, которая
@@ -608,15 +626,29 @@ tr:last-child td{border-bottom:none}
   </div>
 
   <nav class="views">
-    <button class="viewbtn active" id="vb-overview" onclick="setView('overview')">Обзор здоровья</button>
-    <button class="viewbtn" id="vb-fitness" onclick="setView('fitness')">Форма и питание</button>
+    <button class="viewbtn active" id="vb-today" onclick="setView('today')">Сегодня</button>
+    <button class="viewbtn" id="vb-archive" onclick="setView('archive')">Архив и учёт</button>
   </nav>
 
-  <div id="view-overview">
-    <!-- Приём на сегодня. Стоит первым: это единственное, что нужно сделать
-         в панели ежедневно, и ради этого её открывают. -->
-    <section id="intake"></section>
+  <!-- ЭКРАН «СЕГОДНЯ» — только то, что делает владелец панели.
 
+       Отзыв владельца был прямой: «панель нагруженная», «не понимаю, что мне
+       сюда вгружать», «остаток 19 из 20 — это жесть», «заказать, контроль,
+       общий анализ крови — не знаю, чем с этим делать». Всё перечисленное —
+       работа ассистента, а показывалась она принципалу. Поэтому здесь
+       осталось три вещи: отметить приём, записать тренировку, закрыть цель
+       от тренера. Складской учёт, расписание анализов и заказы уехали
+       в «Архив и учёт». -->
+  <div id="view-today">
+    <section id="intake"></section>
+    <section id="todayWorkout"></section>
+    <section id="todayGoals"></section>
+    <section id="todayNote"></section>
+  </div>
+
+  <!-- ЭКРАН «АРХИВ И УЧЁТ» — всё остальное. Сюда заходит ассистент; данные
+       никуда не делись, просто не мешают на первом экране. -->
+  <div id="view-archive" style="display:none">
     <section class="attention">
       <div class="attn-head"><span class="dot"></span><h2>Требует внимания</h2><span class="count" id="attnCount"></span></div>
       <div class="attn-grid" id="attnGrid"></div>
@@ -633,30 +665,27 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
-    <!-- Пока источник не подключён, эти цифры — внесённые вручную или
-         пример. Держать их крупно наверху значит выдавать за настоящие
-         показания, поэтому блок стоит ниже и весит меньше. -->
-    <section id="metrics"></section>
-
-    <!-- Научная лента. Это материалы для чтения, а не показатели здоровья,
-         поэтому блок стоит в конце обзора и оформлен сдержанно. -->
-    <section class="panel longevity">
-      <div class="panel-head"><h2>Longevity · свежие научные материалы</h2>
-        <button class="btn ghost small" onclick="fetchLongevity(true)">Обновить</button></div>
-      <div class="panel-body" id="longevityBody"></div>
-    </section>
-  </div>
-
-  <div id="view-fitness" style="display:none">
     <section class="panel" id="goalsPanel">
       <div class="panel-head"><h2>Цели · неделя и месяц</h2>
         <span class="mini">включая задачи от куратора-тренера</span></div>
       <div class="panel-body" id="goalsBody"></div>
     </section>
+
     <div class="panel">
       <div class="tabs" id="ftabs"></div>
       <div class="tab-body" id="ftabBody"></div>
     </div>
+
+    <!-- Пока источник не подключён, эти цифры — внесённые вручную или
+         пример. Держать их крупно наверху значит выдавать за настоящие
+         показания. -->
+    <section id="metrics"></section>
+
+    <section class="panel longevity">
+      <div class="panel-head"><h2>Longevity · свежие научные материалы</h2>
+        <button class="btn ghost small" onclick="fetchLongevity(true)">Обновить</button></div>
+      <div class="panel-body" id="longevityBody"></div>
+    </section>
   </div>
 </div>
 
@@ -731,7 +760,7 @@ if(!window.storage){
 const KEY="ko-health-v2";
 const MONTHS=["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const today=new Date(); today.setHours(0,0,0,0);
-let state=null, view="overview", activeTab="metrics", fActiveTab="workouts", expandedLab=null, expandedDoc=null, selectedDate=null;
+let state=null, view="today", activeTab="vitamins", fActiveTab="workouts", expandedLab=null, expandedDoc=null, selectedDate=null;
 
 /* ---------- date helpers ---------- */
 /* Дата в виде ГГГГ-ММ-ДД по МЕСТНОМУ времени.
@@ -1133,12 +1162,14 @@ function tabCount(k){
   const a=state[k];return Array.isArray(a)?a.length:0;
 }
 function setView(v){view=v;
-  document.getElementById("view-overview").style.display=v==="overview"?"block":"none";
-  document.getElementById("view-fitness").style.display=v==="fitness"?"block":"none";
-  document.getElementById("vb-overview").classList.toggle("active",v==="overview");
-  document.getElementById("vb-fitness").classList.toggle("active",v==="fitness");
+  document.getElementById("view-today").style.display=v==="today"?"block":"none";
+  document.getElementById("view-archive").style.display=v==="archive"?"block":"none";
+  document.getElementById("vb-today").classList.toggle("active",v==="today");
+  document.getElementById("vb-archive").classList.toggle("active",v==="archive");
   renderAll();
-  if(v==="overview"&&!longevityLoaded)fetchLongevity(false);
+  /* Научную ленту грузим только когда открыт архив: на экране «Сегодня» её нет,
+     и обращаться в сеть ради невидимого блока незачем. */
+  if(v==="archive"&&!longevityLoaded)fetchLongevity(false);
 }
 function renderTabs(){
   document.getElementById("tabs").innerHTML=MAIN_TABS.map(t=>
@@ -2201,8 +2232,9 @@ function nutWeekAverage(){
    менялась, а на экране оставался прежний день. Теперь перерисовываем тот
    раздел, который открыт, вместе с его счётчиками. */
 function renderDateDependent(){
-  if(view==="fitness"){ renderFTabs(); renderFTabBody(); }
-  else { renderTabs(); renderTabBody(); }
+  /* Дневник питания и вкладки учёта живут на экране «Архив и учёт»;
+     на «Сегодня» их нет, поэтому там перерисовывать нечего. */
+  if(view==="archive"){ renderFTabs(); renderFTabBody(); renderTabs(); renderTabBody(); }
 }
 function shiftDay(n){selectedDate=iso(addDays(parse(selectedDate),n));renderDateDependent();}
 function gotoToday(){selectedDate=iso(today);renderDateDependent();}
@@ -4585,11 +4617,103 @@ function renderAll(){
   renderDayStatus();
   renderDemoBanner();
   renderPartialNote();
-  if(view==="overview") renderIntake();
   renderStorageNote();
-  if(view==="overview"){renderAttention();renderMetrics();renderCalendar();renderTabs();renderTabBody();}
-  else{renderGoals();renderFTabs();renderFTabBody();}
+  if(view==="today"){
+    renderIntake(); renderTodayWorkout(); renderTodayGoals(); renderTodayNote();
+  } else {
+    renderAttention(); renderMetrics(); renderCalendar(); renderTabs(); renderTabBody();
+    renderGoals(); renderFTabs(); renderFTabBody();
+  }
 }
+/* Склонение числительных: «1 пункт», «2 пункта», «6 пунктов».
+   Без этого получалось «6 пункта» — мелочь, но панель выглядит недоделанной. */
+function склонение(n, один, два, много){
+  const a=Math.abs(n)%100, b=a%10;
+  if(a>10&&a<20) return много;
+  if(b>1&&b<5) return два;
+  if(b===1) return один;
+  return много;
+}
+
+/* ---------- экран «Сегодня» ----------
+
+   Три блока и ничего больше: отметить приём, записать тренировку, закрыть
+   цель от тренера. Всё, что делает ассистент — заказы, расписание анализов,
+   складской учёт остатков, — уехало в «Архив и учёт».
+
+   Владелец панели сказал про прежнюю версию: «остаток 19 из 20 — это жесть
+   полная», «заказать, контроль, общий анализ крови — не знаю, чем с этим
+   делать». Он прав: это не его задачи. */
+
+function renderTodayWorkout(){
+  const el=document.getElementById("todayWorkout");
+  if(!el) return;
+
+  const заПериод=записиНедели();
+  const план=state.workouts.map(w=>{
+    const сделано=сделаноЗаНеделю(w.type);
+    const готово=сделано>=w.perWeek;
+    return `<div class="tw-row${готово?" done":""}">
+      <span class="tw-type">${esc(w.type)}</span>
+      <span class="tw-count">${сделано} / ${w.perWeek}</span>
+      <span class="tw-bar"><i style="width:${w.perWeek>0?Math.min(100,(сделано/w.perWeek)*100):0}%"></i></span>
+    </div>`;
+  }).join("");
+
+  const последние=(state.workoutLog||[]).slice()
+    .sort((a,b)=>a.дата<b.дата?1:-1).slice(0,3).map(з=>{
+      const d=parse(з.дата);
+      return `<div class="tw-last"><span>${d?fmt(d):esc(з.дата)}</span>
+        <b>${esc(з.тип)}</b>${з.минут?` · ${з.минут} мин`:""}${
+        з.ощущение?` <span class="chip ex">${esc(з.ощущение)}</span>`:""}</div>`;
+    }).join("");
+
+  el.className="panel";
+  el.innerHTML=`<div class="panel-head"><h2>Тренировки</h2>
+      <button class="btn small" onclick="openWrkLog()">+ Тренировка</button></div>
+    <div class="panel-body">
+      ${план||`<div class="mini">Типы тренировок и цели на неделю ставит тренер — они появятся здесь.</div>`}
+      ${заПериод.length?`<div class="tw-week">На этой неделе: <b>${заПериод.length}</b></div>`:""}
+      ${последние?`<div class="tw-lasts">${последние}</div>`:""}
+      <button class="btn ghost small" style="margin-top:10px" onclick="отправитьТренеру()">→ Отправить тренеру</button>
+    </div>`;
+}
+
+/* Цели: только отметить сделанное. Создавать их здесь нельзя — их ставит
+   тренер, и владелец сам сказал, что это не его дело. */
+function renderTodayGoals(){
+  const el=document.getElementById("todayGoals");
+  if(!el) return;
+  const цели=(state.fitnessGoals||[]).filter(г=>г.period==="week");
+  if(!цели.length){ el.innerHTML=""; el.className=""; return; }
+
+  const строки=цели.map(г=>`<div class="goal${г.done?" done":""}">
+    <button class="goal-check" onclick="toggleGoal('${г.id}')">${г.done?"✓":""}</button>
+    <div class="goal-text">${esc(г.text)}${г.source==="trainer"?' <span class="chip doc">Тренер</span>':""}</div>
+  </div>`).join("");
+
+  const закрыто=цели.filter(г=>г.done).length;
+  el.className="panel";
+  el.innerHTML=`<div class="panel-head"><h2>Цели недели</h2>
+      <span class="mini">${закрыто} из ${цели.length}</span></div>
+    <div class="panel-body">${строки}</div>`;
+}
+
+/* Одна строка внизу: сколько задач ждёт ассистента. Сами задачи не
+   показываем — владелец с ними ничего сделать не может, а видеть их
+   как «висящее на мне» — то, на что он и жаловался. */
+function renderTodayNote(){
+  const el=document.getElementById("todayNote");
+  if(!el) return;
+  const админские=attentionClean().filter(i=>i.tag!=="Тренировки").length;
+  el.className="today-note";
+  el.innerHTML=админские
+    ? `Заказы, записи и анализы — ${админские} ${склонение(админские,"пункт","пункта","пунктов")} —
+       ведёт ассистент. Смотреть: <button class="linkbtn" onclick="setView('archive')">Архив и учёт</button>.`
+    : `Всё в порядке: открытых задач по заказам и записям нет.
+       <button class="linkbtn" onclick="setView('archive')">Архив и учёт</button>`;
+}
+
 /* ---------- приём на сегодня ----------
    Точками, а не галочками: у позиции может быть два приёма в день, и надо
    видеть «принял один из двух», а не «принял / не принял». */
