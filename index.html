@@ -307,6 +307,26 @@ tr:last-child td{border-bottom:none}
 .warn-inline{background:var(--attn-soft);border:1px solid #EBD9BF;border-radius:10px;
   padding:10px 12px;margin-top:10px;font-size:12.5px;line-height:1.5;color:var(--ink)}
 
+/* блок «Прогресс» — что панель даёт взамен */
+.prog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.prog-item{background:var(--bg);border-radius:10px;padding:11px 13px}
+.prog-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;line-height:1.3;margin-bottom:5px}
+.prog-val{font-family:var(--display);font-size:24px;font-weight:600;line-height:1.1}
+.prog-val small{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:4px}
+/* сдвиг нейтральным цветом: это факт, а не оценка «лучше/хуже» */
+.prog-shift{font-family:var(--body);font-size:11.5px;color:var(--muted);
+  font-weight:500;margin-left:6px}
+.prog-note{font-size:11px;color:var(--muted);margin-top:3px}
+/* «в прошлый раз» в форме тренировки */
+.wl-prev{margin:0 0 12px}
+.wl-prev-box{background:var(--primary-soft);border-radius:10px;padding:9px 12px;
+  font-size:12.5px;color:var(--primary);line-height:1.45}
+.wl-prev-lbl{display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  opacity:.75;font-weight:600;margin-bottom:2px}
+.wl-prev-what{color:var(--ink);opacity:.8;margin-top:3px}
+.wl-prev-empty{font-size:12px;color:var(--muted)}
+
 /* экран «Сегодня»: тренировки и заметка внизу */
 .tw-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
 .tw-row:last-of-type{border-bottom:none}
@@ -645,6 +665,11 @@ tr:last-child td{border-bottom:none}
        в «Архив и учёт». -->
   <div id="view-today">
     <section id="intake"></section>
+    <!-- Что панель даёт взамен. Владелец спросил трижды разными словами:
+         «что она мне даст», «будет какой-то прогресс здесь», «оставить
+         дашборд тех данных, которые реально полезны». До этого экран
+         «Сегодня» был только вводом и не возвращал ничего. -->
+    <section id="todayProgress"></section>
     <section id="todayWorkout"></section>
     <section id="todayGoals"></section>
     <section id="todayNote"></section>
@@ -1469,10 +1494,14 @@ function openWrkLog(id, тип){
           <option value=""${!e.ощущение?" selected":""}>не указывать</option>
           ${ОЩУЩЕНИЯ.map(о=>`<option value="${о}"${e.ощущение===о?" selected":""}>${о}</option>`).join("")}
         </select></div></div>
+    <div id="wl_last" class="wl-prev"></div>
     <div class="field"><label>Что делали</label>
       <textarea id="wl_what" rows="2" placeholder="грудь/спина, 4 подхода">${esc(e.что||"")}</textarea></div>
     <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
       <button class="btn" onclick="saveWrkLog('${id||""}')">Сохранить</button></div></div>`);
+  показатьПрошлую(id);
+  const поле=document.getElementById("wl_type");
+  if(поле) поле.addEventListener("input", ()=>показатьПрошлую(id));
 }
 
 /* Выбор «другое…» открывает поле для своего названия. */
@@ -1482,6 +1511,32 @@ function wrkTypeChanged(){
   const своё = sel.value==="__свой";
   поле.style.display = своё ? "" : "none";
   if(своё) поле.focus();
+  показатьПрошлую();
+}
+
+/* «В прошлый раз» по этому же типу. Владелец спросил: «буду видеть силовые
+   тренировки по сплиту?» — без этого дневник был складом записей, из которого
+   ничего не видно. Теперь при выборе типа сразу видно, когда и что делали
+   в прошлый раз: не нужно листать историю, чтобы вспомнить. */
+function показатьПрошлую(id){
+  const где=document.getElementById("wl_last");
+  if(!где) return;
+  const sel=document.getElementById("wl_type_sel");
+  const тип=(sel&&sel.value!=="__свой") ? sel.value : (val("wl_type")||"");
+  if(!тип){ где.innerHTML=""; return; }
+
+  /* правим существующую запись — её саму в «прошлый раз» не берём */
+  const прошлые=(state.workoutLog||[])
+    .filter(з=>з.тип===тип && з.id!==id)
+    .sort((a,b)=>a.дата<b.дата?1:-1);
+  const п=прошлые[0];
+  if(!п){ где.innerHTML=`<div class="wl-prev-empty">По типу «${esc(тип)}» это будет первая запись.</div>`; return; }
+  const д=parse(п.дата);
+  const дней=д?daysBetween(today,д):null;
+  где.innerHTML=`<div class="wl-prev-box"><span class="wl-prev-lbl">В прошлый раз</span>
+    <b>${д?fmt(д):esc(п.дата)}</b>${дней!==null&&дней>0?` · ${дней} ${склонение(дней,"день","дня","дней")} назад`:" · сегодня"}
+    ${п.минут?` · ${п.минут} мин`:""}${п.ощущение?` · ${esc(п.ощущение)}`:""}
+    ${п.что?`<div class="wl-prev-what">${esc(п.что)}</div>`:""}</div>`;
 }
 
 async function saveWrkLog(id){
@@ -4733,7 +4788,7 @@ function renderAll(){
   renderPartialNote();
   renderStorageNote();
   if(view==="today"){
-    renderIntake(); renderTodayWorkout(); renderTodayGoals(); renderTodayNote();
+    renderIntake(); renderTodayProgress(); renderTodayWorkout(); renderTodayGoals(); renderTodayNote();
   } else {
     renderAttention(); renderMetrics(); renderCalendar(); renderTabs(); renderTabBody();
     renderGoals(); renderFTabs(); renderFTabBody();
@@ -4826,6 +4881,102 @@ function renderTodayNote(){
        ведёт ассистент. Смотреть: <button class="linkbtn" onclick="setView('archive')">Архив и учёт</button>.`
     : `Всё в порядке: открытых задач по заказам и записям нет.
        <button class="linkbtn" onclick="setView('archive')">Архив и учёт</button>`;
+}
+
+/* ---------- прогресс: что панель даёт взамен ----------
+
+   Владелец спросил трижды разными словами: «что она мне даст», «будет какой-то
+   прогресс здесь», «оставить дашборд тех данных, которые реально полезны».
+   Экран «Сегодня» до этого был только вводом — просил отмечать и не возвращал
+   ничего.
+
+   Здесь четыре числа, каждое считается из того, что он сам ввёл или что
+   пришло из Whoop. Ничего не додумываем: нет данных — так и написано,
+   а не ноль и не прочерк без объяснения. */
+
+/* Серия: сколько дней подряд приём отмечен полностью.
+   Сегодняшний день не обрывает серию, если ещё не закрыт — день не кончился. */
+function серияПриёма(){
+  const позиции=state.vitamins.filter(v=>
+    v.status!=="ordered"&&!v.needsDose&&!v.needsStock&&v.perDay>0);
+  if(!позиции.length||!state.intakeFrom) return null;
+  const начало=parse(state.intakeFrom);
+  const полный=(д)=>{
+    const отм=(state.intake||{})[iso(д)]||{};
+    return позиции.every(v=>(+отм[v.id]||0)>=v.perDay);
+  };
+  let серия=0, д=new Date(today);
+  if(!полный(д)) д=addDays(д,-1);          // сегодня ещё можно доотметить
+  while(д>=начало && полный(д)){ серия++; д=addDays(д,-1); }
+  return серия;
+}
+
+/* Среднее метрики за период и сравнение с предыдущим таким же периодом. */
+function среднееМетрики(поле, дней){
+  const взять=(конец,нач)=>state.metrics.filter(m=>{
+    const д=parse(m.date);
+    return д&&д>=нач&&д<=конец&&m[поле]!=null;
+  }).map(m=>+m[поле]);
+  const сейчасДо=today, сейчасОт=addDays(today,-(дней-1));
+  const преждеДо=addDays(сейчасОт,-1), преждеОт=addDays(преждеДо,-(дней-1));
+  const a=взять(сейчасДо,сейчасОт), b=взять(преждеДо,преждеОт);
+  if(!a.length) return null;
+  const ср=x=>Math.round((x.reduce((s,v)=>s+v,0)/x.length)*10)/10;
+  return {сейчас:ср(a), дней:a.length,
+          прежде:b.length?ср(b):null,
+          сдвиг:b.length?Math.round((ср(a)-ср(b))*10)/10:null};
+}
+
+function renderTodayProgress(){
+  const el=document.getElementById("todayProgress");
+  if(!el) return;
+
+  const плитки=[];
+
+  const серия=серияПриёма();
+  if(серия!==null) плитки.push({
+    подпись:"Приём без пропусков",
+    значение:серия, единица:серия?склонение(серия,"день","дня","дней"):"",
+    пусто:серия===0?"начните с сегодняшнего":null});
+
+  [["sleep","Сон","ч"],["recovery","Recovery","%"]].forEach(([поле,имя,ед])=>{
+    const с=среднееМетрики(поле,7);
+    if(!с) return;
+    плитки.push({подпись:имя+" · 7 дней", значение:с.сейчас, единица:ед,
+      сдвиг:с.сдвиг, дней:с.дней});
+  });
+
+  const заМесяц=(state.workoutLog||[]).filter(з=>{
+    const д=parse(з.дата); return д&&д>=addDays(today,-27)&&д<=today;
+  }).length;
+  const планМесяц=state.workouts.reduce((s,w)=>s+(+w.perWeek||0),0)*4;
+  if(планМесяц||заМесяц) плитки.push({
+    подпись:"Тренировок за 4 недели",
+    значение:заМесяц, единица:планМесяц?"из "+планМесяц:""});
+
+  if(!плитки.length){
+    el.className="today-note";
+    el.innerHTML=`Прогресс появится, когда наберутся данные: отметьте приём,
+      запишите тренировку или загрузите выгрузку Whoop.`;
+    return;
+  }
+
+  el.className="panel prog";
+  el.innerHTML=`<div class="panel-head"><h2>Прогресс</h2>
+      <span class="mini">считается по вашим отметкам</span></div>
+    <div class="panel-body"><div class="prog-grid">
+      ${плитки.map(п=>`<div class="prog-item">
+        <div class="prog-lbl">${esc(п.подпись)}</div>
+        <div class="prog-val">${п.значение}<small>${esc(п.единица||"")}</small>${
+          п.сдвиг!==undefined&&п.сдвиг!==null&&п.сдвиг!==0
+            ? `<span class="prog-shift">${п.сдвиг>0?"▲":"▼"} ${Math.abs(п.сдвиг)}</span>`:""}</div>
+        ${п.пусто?`<div class="prog-note">${esc(п.пусто)}</div>`
+          :п.дней&&п.дней<7?`<div class="prog-note">по ${п.дней} ${склонение(п.дней,"дню","дням","дням")}</div>`:""}
+      </div>`).join("")}
+    </div>
+    <div class="mini" style="margin-top:8px">Стрелка — сравнение с предыдущими семью днями.
+      Это факт, а не оценка: что считать хорошим, решаете вы со специалистом.</div>
+    </div>`;
 }
 
 /* ---------- приём на сегодня ----------
