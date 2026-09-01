@@ -307,6 +307,10 @@ tr:last-child td{border-bottom:none}
 .warn-inline{background:var(--attn-soft);border:1px solid #EBD9BF;border-radius:10px;
   padding:10px 12px;margin-top:10px;font-size:12.5px;line-height:1.5;color:var(--ink)}
 
+/* рамка вокруг графика в таблицах учёта */
+.chart-box-wrap{background:var(--bg);border:1px solid var(--line);border-radius:11px;
+  padding:8px 6px 2px;margin:0 0 12px}
+
 /* блок «Прогресс» — что панель даёт взамен */
 .prog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .prog-item{background:var(--bg);border-radius:10px;padding:11px 13px}
@@ -954,6 +958,10 @@ function migrate(){
      Так список переносится вместе с данными, а тяжёлые файлы не раздувают
      выгрузку до десятков мегабайт. */
   if(!Array.isArray(state.documents)){ state.documents=[]; ch=true; }
+  /* Замеры тела: вес и обхваты. Отдельно от метрик Whoop — те приходят из
+     выгрузки, а это человек вводит сам, и частота другая: раз в неделю,
+     а не каждую ночь. */
+  if(!Array.isArray(state.body)){ state.body=[]; ch=true; }
   /* отметки приёма по дням. intakeFrom намеренно не заполняем: он появится
      в день первой отметки, и до этого дня остаток считается по плану, как
      раньше. Поставить его сегодня задним числом значило бы объявить, что
@@ -1182,7 +1190,7 @@ function renderCalendar(){
 /* ---------- tabs / modules ---------- */
 const MAIN_TABS=[
   {k:"vitamins",name:"Витамины"},{k:"labs",name:"Анализы"},
-  {k:"doctors",name:"Врачи"},{k:"documents",name:"Документы"},
+  {k:"doctors",name:"Врачи"},{k:"body",name:"Тело"},{k:"documents",name:"Документы"},
   {k:"schedule",name:"Расписание"},{k:"metrics",name:"Параметры"},
 ];
 const FIT_TABS=[{k:"workouts",name:"Тренировки"},{k:"nutrition",name:"Питание"}];
@@ -1216,6 +1224,7 @@ function renderTabBody(){
   if(activeTab==="vitamins")b.innerHTML=vitTable();
   else if(activeTab==="labs")b.innerHTML=labTable();
   else if(activeTab==="doctors")b.innerHTML=docTable();
+  else if(activeTab==="body")b.innerHTML=bodyTable();
   else if(activeTab==="documents"){b.innerHTML=docsTable();дописатьМесто();}
   else if(activeTab==="schedule")b.innerHTML=schedTable();
   else b.innerHTML=metricTable();
@@ -4883,6 +4892,108 @@ function renderTodayNote(){
        <button class="linkbtn" onclick="setView('archive')">Архив и учёт</button>`;
 }
 
+/* ---------- вес и обхваты ----------
+
+   Зачем отдельно от метрик Whoop: те приходят выгрузкой каждую ночь, а вес
+   человек встаёт и взвешивает сам, обычно раз в неделю. Смешивать их в одной
+   таблице значило бы показывать пустые клетки в шести колонках из семи.
+
+   В «Прогрессе» вес — то самое очевидное число, которого там не хватало:
+   серия отметок и число тренировок есть, а главного показателя не было. */
+
+const ОБХВАТЫ=[{k:"грудь",имя:"Грудь"},{k:"пояс",имя:"Пояс"},{k:"бедро",имя:"Бедро"}];
+
+function замерыТела(){
+  return (state.body||[]).slice().sort((a,b)=>a.дата<b.дата?1:-1);
+}
+
+/* Вес сейчас и сдвиг за период. Берём ближайший замер не новее границы:
+   взвешиваются нерегулярно, и требовать замер ровно 28 дней назад бессмысленно. */
+function весИСдвиг(дней){
+  const все=замерыТела().filter(з=>з.вес!=null);
+  if(!все.length) return null;
+  const сейчас=все[0];
+  const граница=addDays(today,-дней);
+  const прежний=все.find(з=>{ const д=parse(з.дата); return д && д<=граница; });
+  return {вес:сейчас.вес, дата:сейчас.дата,
+    сдвиг: прежний ? Math.round((сейчас.вес-прежний.вес)*10)/10 : null,
+    отДаты: прежний?прежний.дата:null};
+}
+
+function openBody(id){
+  const e = id ? (замерыТела().find(з=>з.id===id)||{}) : {};
+  show(`<div class="modal-head"><h3>${id?"Изменить":"Новый"} замер</h3></div>
+  <div class="modal-body">
+    <div class="field two">
+      <div><label>Дата</label><input id="bd_date" type="date" value="${e.дата||iso(today)}"></div>
+      <div><label>Вес, кг</label><input id="bd_w" type="number" step="0.1" min="0" value="${e.вес??""}"></div>
+    </div>
+    <div class="field"><label>Обхваты, см — необязательно</label>
+      <div class="two">
+        ${ОБХВАТЫ.slice(0,2).map(о=>`<div><label>${о.имя}</label>
+          <input id="bd_${о.k}" type="number" step="0.5" min="0" value="${e[о.k]??""}"></div>`).join("")}
+      </div>
+      <div class="two" style="margin-top:10px">
+        <div><label>${ОБХВАТЫ[2].имя}</label>
+          <input id="bd_${ОБХВАТЫ[2].k}" type="number" step="0.5" min="0" value="${e[ОБХВАТЫ[2].k]??""}"></div>
+        <div></div>
+      </div></div>
+    <div class="hint">Вес считайте утром до еды — иначе колебания в полтора килограмма
+      скажут больше о завтраке, чем о результате.</div>
+    <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
+      <button class="btn" onclick="saveBody('${id||""}')">Сохранить</button></div></div>`);
+}
+
+async function saveBody(id){
+  const дата=document.getElementById("bd_date").value||iso(today);
+  const чис=пол=>{const v=parseFloat(document.getElementById("bd_"+пол).value);return isNaN(v)?null:v;};
+  const вес=чис("w");
+  if(вес===null){ alert("Укажите вес — без него замер не с чем сравнивать."); return; }
+  const о={id:id||u(), дата, вес};
+  ОБХВАТЫ.forEach(х=>{ const v=чис(х.k); if(v!==null) о[х.k]=v; });
+  if(!Array.isArray(state.body)) state.body=[];
+  /* один замер на дату: второе взвешивание в тот же день заменяет первое */
+  state.body=state.body.filter(з=>з.id!==id && з.дата!==дата);
+  state.body.push(о);
+  await done();
+}
+
+async function delBody(id){
+  if(!confirm("Удалить замер?")) return;
+  state.body=(state.body||[]).filter(з=>з.id!==id);
+  await save(); renderAll();
+}
+
+function bodyTable(){
+  const список=замерыТела();
+  const голова=`<div class="row-head"><h3>Вес и обхваты</h3>
+    <button class="btn small" onclick="openBody()">+ Замер</button></div>`;
+  if(!список.length) return голова+empty("Замеров пока нет",
+    "Добавьте вес — он появится в «Прогрессе» на первом экране, и станет видно направление.");
+
+  const точки=список.slice().reverse().filter(з=>з.вес!=null).map(з=>{
+    const д=parse(з.дата);
+    return {подпись:д?fmt(д):з.дата, значение:з.вес};
+  });
+
+  const строки=список.map(з=>{
+    const д=parse(з.дата);
+    const обх=ОБХВАТЫ.filter(х=>з[х.k]!=null).map(х=>`${х.имя} ${з[х.k]}`).join(" · ");
+    return `<tr>
+      <td class="title"><b>${з.вес} кг</b>${обх?`<div class="mini">${esc(обх)}</div>`:""}</td>
+      <td class="num" data-label="Дата">${д?fmt(д):esc(з.дата)}</td>
+      <td class="acts"><div class="rowbtns">
+        <button class="iconbtn" onclick="openBody('${з.id}')">Изм.</button>
+        <button class="iconbtn" onclick="delBody('${з.id}')">Удал.</button></div></td></tr>`;
+  }).join("");
+
+  return голова
+    + (точки.length>1 ? `<div class="chart-box-wrap">${график({точки, вид:"линия",
+        единицы:"кг", высота:170})}</div>` : "")
+    + `<table class="cards"><thead><tr><th>Вес</th><th>Дата</th><th></th></tr></thead>
+       <tbody>${строки}</tbody></table>`;
+}
+
 /* ---------- прогресс: что панель даёт взамен ----------
 
    Владелец спросил трижды разными словами: «что она мне даст», «будет какой-то
@@ -4933,6 +5044,11 @@ function renderTodayProgress(){
 
   const плитки=[];
 
+  /* Вес первым: это то очевидное число, которого в «Прогрессе» не хватало. */
+  const в=весИСдвиг(28);
+  if(в) плитки.push({подпись:"Вес", значение:в.вес, единица:"кг", сдвиг:в.сдвиг,
+    примечание:в.сдвиг===null?"первый замер":"за 4 недели"});
+
   const серия=серияПриёма();
   if(серия!==null) плитки.push({
     подпись:"Приём без пропусков",
@@ -4955,15 +5071,17 @@ function renderTodayProgress(){
     значение:заМесяц, единица:планМесяц?"из "+планМесяц:""});
 
   if(!плитки.length){
-    el.className="today-note";
-    el.innerHTML=`Прогресс появится, когда наберутся данные: отметьте приём,
-      запишите тренировку или загрузите выгрузку Whoop.`;
+    el.className="panel prog";
+    el.innerHTML=`<div class="panel-head"><h2>Прогресс</h2>
+        <button class="btn ghost small" onclick="openBody()">+ Вес</button></div>
+      <div class="panel-body"><div class="mini">Появится, когда наберутся данные:
+        отметьте приём, запишите тренировку, внесите вес или загрузите выгрузку Whoop.</div></div>`;
     return;
   }
 
   el.className="panel prog";
   el.innerHTML=`<div class="panel-head"><h2>Прогресс</h2>
-      <span class="mini">считается по вашим отметкам</span></div>
+      <button class="btn ghost small" onclick="openBody()">+ Вес</button></div>
     <div class="panel-body"><div class="prog-grid">
       ${плитки.map(п=>`<div class="prog-item">
         <div class="prog-lbl">${esc(п.подпись)}</div>
@@ -4971,6 +5089,7 @@ function renderTodayProgress(){
           п.сдвиг!==undefined&&п.сдвиг!==null&&п.сдвиг!==0
             ? `<span class="prog-shift">${п.сдвиг>0?"▲":"▼"} ${Math.abs(п.сдвиг)}</span>`:""}</div>
         ${п.пусто?`<div class="prog-note">${esc(п.пусто)}</div>`
+          :п.примечание?`<div class="prog-note">${esc(п.примечание)}</div>`
           :п.дней&&п.дней<7?`<div class="prog-note">по ${п.дней} ${склонение(п.дней,"дню","дням","дням")}</div>`:""}
       </div>`).join("")}
     </div>
