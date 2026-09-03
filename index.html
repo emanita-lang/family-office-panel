@@ -311,6 +311,37 @@ tr:last-child td{border-bottom:none}
 .chart-box-wrap{background:var(--bg);border:1px solid var(--line);border-radius:11px;
   padding:8px 6px 2px;margin:0 0 12px}
 
+/* ---------- экран прогресса тренировок ---------- */
+.tr-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:12px}
+.tr-cell{background:var(--bg);border-radius:10px;padding:10px 11px}
+.tr-lbl{font-size:10.5px;color:var(--muted);font-weight:600;text-transform:uppercase;
+  letter-spacing:.04em;margin-bottom:4px}
+.tr-val{font-family:var(--display);font-size:23px;font-weight:600;line-height:1.05}
+.tr-val small{font-size:12px;color:var(--muted);font-weight:500;margin-left:2px}
+.tr-val.muted{color:var(--muted)}
+.tr-note{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.3}
+.tr-week{font-size:13px;padding:9px 0;border-top:1px solid var(--line)}
+/* флаг разговора: приглушённый, а не тревожный — это сигнал, не оценка */
+.tr-flag{background:var(--attn-soft);border:1px solid #EBD9BF;border-radius:10px;
+  padding:10px 12px;margin-top:10px;font-size:12.5px;line-height:1.5}
+.tr-flag b{color:var(--attn)}
+.tr-empty{font-size:13px;color:var(--muted);line-height:1.5}
+.tr-empty b{display:block;color:var(--ink);font-family:var(--display);font-size:14px;margin-bottom:4px}
+.tr-single{font-family:var(--display);font-size:15px;margin-bottom:8px}
+/* три линии динамики силы */
+.tr-line{fill:none;stroke-width:2;stroke-linejoin:round}
+.tr-pt{fill:var(--surface);stroke-width:2}
+.tr-line.c0,.tr-pt.c0{stroke:var(--primary)}
+.tr-line.c1,.tr-pt.c1{stroke:#7A5CA8}
+.tr-line.c2,.tr-pt.c2{stroke:var(--attn)}
+.tr-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px}
+.tr-leg{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.tr-leg b{color:var(--ink);font-family:var(--display)}
+.tr-dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.tr-dot.c0{background:var(--primary)} .tr-dot.c1{background:#7A5CA8} .tr-dot.c2{background:var(--attn)}
+@media(max-width:520px){ .tr-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .tr-val{font-size:20px} .tr-cell{padding:8px 9px} }
+
 /* блок «Прогресс» — что панель даёт взамен */
 .prog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .prog-item{background:var(--bg);border-radius:10px;padding:11px 13px}
@@ -639,6 +670,7 @@ tr:last-child td{border-bottom:none}
         </details>
 
         <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importData(this)">
+        <input type="file" id="trainerIn" accept=".json,application/json" style="display:none" onchange="принятьОтТренера(this)">
       </div>
     </div>
   </header>
@@ -655,6 +687,7 @@ tr:last-child td{border-bottom:none}
 
   <nav class="views">
     <button class="viewbtn active" id="vb-today" onclick="setView('today')">Сегодня</button>
+    <button class="viewbtn" id="vb-training" onclick="setView('training')">Тренировки</button>
     <button class="viewbtn" id="vb-archive" onclick="setView('archive')">Архив и учёт</button>
   </nav>
 
@@ -674,9 +707,19 @@ tr:last-child td{border-bottom:none}
          дашборд тех данных, которые реально полезны». До этого экран
          «Сегодня» был только вводом и не возвращал ничего. -->
     <section id="todayProgress"></section>
-    <section id="todayWorkout"></section>
     <section id="todayGoals"></section>
     <section id="todayNote"></section>
+  </div>
+
+  <!-- ЭКРАН «ТРЕНИРОВКИ» — прогресс для клиента, четыре блока по ТЗ.
+       Клиент здесь только читает: данные вносит тренер со своей страницы.
+       Ничего кроме этих четырёх блоков выводить нельзя — так задано. -->
+  <div id="view-training" style="display:none">
+    <section id="trRegular"></section>
+    <section id="trStrength"></section>
+    <section id="trMeasure"></section>
+    <section id="trLoad"></section>
+    <section id="trExchange"></section>
   </div>
 
   <!-- ЭКРАН «АРХИВ И УЧЁТ» — всё остальное. Сюда заходит ассистент; данные
@@ -961,7 +1004,8 @@ function migrate(){
   /* Замеры тела: вес и обхваты. Отдельно от метрик Whoop — те приходят из
      выгрузки, а это человек вводит сам, и частота другая: раз в неделю,
      а не каждую ночь. */
-  if(!Array.isArray(state.body)){ state.body=[]; ch=true; }
+  /* модуль «Тренировки»: пять сущностей и перенос прежних записей */
+  if(миграцияТренировок()) ch=true;
   /* отметки приёма по дням. intakeFrom намеренно не заполняем: он появится
      в день первой отметки, и до этого дня остаток считается по плану, как
      раньше. Поставить его сегодня задним числом значило бы объявить, что
@@ -1076,10 +1120,9 @@ function attentionClean(){
     if(n<=30){const r=relLabel(nx);out.push({crit:n<0,tag:"Анализы",msg:`${l.name} — сдать`,when:`${r.t} · ${fmt(nx)}`,sort:n});}});
   state.doctors.filter(d=>!d.done).forEach(d=>{const dt=parse(d.date);if(!dt)return;const n=daysBetween(dt,today);
     if(n<=7){const r=relLabel(dt);out.push({crit:n<0,tag:"Врачи",msg:`${d.spec}${d.who&&d.who!=="—"?" — "+d.who:""}`,when:`${r.t} · ${fmt(dt)}`,sort:n});}});
-  /* «Требует внимания» тоже считает по дневнику, а не по ручному счётчику:
-     иначе после перехода на дневник здесь остались бы старые цифры. */
-  state.workouts.forEach(w=>{const left=w.perWeek-сделаноЗаНеделю(w.type);if(left>0&&today.getDay()>=4){
-    out.push({crit:false,tag:"Тренировки",msg:`${w.type}: осталось ${left} трен. на неделе`,when:"до конца недели",sort:6});}});
+  /* Тренировки здесь больше не считаем: регулярность и процент выполнения
+     живут на экране «Тренировки», а дублировать их в «Требует внимания»
+     значит показывать одно и то же дважды. */
   return out.sort((a,b)=>a.sort-b.sort);
 }
 
@@ -1193,16 +1236,18 @@ const MAIN_TABS=[
   {k:"doctors",name:"Врачи"},{k:"body",name:"Тело"},{k:"documents",name:"Документы"},
   {k:"schedule",name:"Расписание"},{k:"metrics",name:"Параметры"},
 ];
-const FIT_TABS=[{k:"workouts",name:"Тренировки"},{k:"nutrition",name:"Питание"}];
+/* Вкладка «Тренировки» убрана: тренировки теперь отдельный экран, где данные
+   вносит тренер. Держать вторую реализацию нельзя. */
+const FIT_TABS=[{k:"nutrition",name:"Питание"}];
 function tabCount(k){
   if(k==="nutrition"){const lg=state.nutrition&&state.nutrition.log;return lg&&lg[selectedDate]?lg[selectedDate].length:0;}
   const a=state[k];return Array.isArray(a)?a.length:0;
 }
 function setView(v){view=v;
-  document.getElementById("view-today").style.display=v==="today"?"block":"none";
-  document.getElementById("view-archive").style.display=v==="archive"?"block":"none";
-  document.getElementById("vb-today").classList.toggle("active",v==="today");
-  document.getElementById("vb-archive").classList.toggle("active",v==="archive");
+  ["today","training","archive"].forEach(к=>{
+    document.getElementById("view-"+к).style.display = v===к?"block":"none";
+    document.getElementById("vb-"+к).classList.toggle("active", v===к);
+  });
   renderAll();
   /* Научную ленту грузим только когда открыт архив: на экране «Сегодня» её нет,
      и обращаться в сеть ради невидимого блока незачем. */
@@ -1231,7 +1276,7 @@ function renderTabBody(){
 }
 function renderFTabBody(){
   const b=document.getElementById("ftabBody");
-  b.innerHTML=fActiveTab==="nutrition"?nutTable():wrkTable();
+  b.innerHTML=nutTable();
 }
 function head(title,addLabel,addFn){
   return `<div class="row-head"><h3>${title}</h3><button class="btn small" onclick="${addFn}">${addLabel}</button></div>`;
@@ -1376,218 +1421,25 @@ function docTable(){
 }
 async function toggleDocExpand(id){expandedDoc=expandedDoc===id?null:id;renderTabBody();}
 function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-/* ---------- дневник тренировок ----------
-
-   Раньше выполненное было счётчиком «2 из 3», который надо было обнулять
-   вручную по понедельникам, — и панель сама об этом писала. Забыл обнулить,
-   и цифра врёт всю следующую неделю.
-
-   Теперь счётчик считается ИЗ ЗАПИСЕЙ дневника: сколько тренировок этого
-   типа попало в текущую неделю. Обнулять нечего — при наступлении новой
-   недели прошлые записи просто перестают в неё попадать. И появляется то,
-   чего не было: что именно человек делал, когда и сколько по времени.
-   Тренеру раньше проверять было нечего. */
-
 /* Неделя с понедельника: в России считают так, а getDay() отдаёт 0 для
    воскресенья — без сдвига неделя начиналась бы с воскресенья. */
-function началоНедели(д){
-  const x=new Date(д||today); x.setHours(0,0,0,0);
-  x.setDate(x.getDate()-((x.getDay()+6)%7));
-  return x;
-}
-function записиНедели(когда){
-  const с=началоНедели(когда), по=addDays(с,6);
-  return (state.workoutLog||[]).filter(з=>{
-    const д=parse(з.дата); return д && д>=с && д<=по;
-  });
-}
-function сделаноЗаНеделю(тип){
-  return записиНедели().filter(з=>з.тип===тип).length;
-}
 const ОЩУЩЕНИЯ=["легко","нормально","тяжело"];
 
-function wrkTable(){
-  const план=state.workouts.length ? (()=>{
-    const rows=state.workouts.map(w=>{
-      const сделано=сделаноЗаНеделю(w.type);
-      const pct=w.perWeek>0?Math.min(100,(сделано/w.perWeek)*100):0;
-      const готово=сделано>=w.perWeek;
-      return `<tr><td class="title"><b>${esc(w.type)}</b><div class="mini">цель: ${w.perWeek}/нед.</div></td>
-        <td data-label="За неделю"><div class="num">${сделано} / ${w.perWeek}</div>
-          <div class="bar"><i style="width:${pct}%;background:${готово?"var(--ok)":"var(--primary)"}"></i></div></td>
-        <td class="acts"><div class="rowbtns">
-          <button class="btn ghost small" onclick="openWrkLog('','${esc(w.type)}')">+ Запись</button>
-          <button class="iconbtn" onclick="edit('workouts','${w.id}')">Изм.</button>
-          <button class="iconbtn" onclick="del('workouts','${w.id}')">Удал.</button></div></td></tr>`;
-    }).join("");
-    return `<table class="cards"><thead><tr><th>Тип</th><th>За неделю</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table>
-      <div class="mini" style="margin-top:8px">Счётчик считается из дневника за текущую неделю —
-      обнулять вручную не нужно, в понедельник он начинается заново.</div>`;
-  })() : empty("Нет типов тренировок","Добавьте тип и цель на неделю — счётчик будет считаться из дневника.");
-
-  /* Кнопка отправки живёт здесь, а не в меню «Данные»: человек думает про
-     тренера именно тогда, когда смотрит на свои тренировки. Одно нажатие —
-     файл с обычным набором разделов; выбор разделов рядом, для редкого случая. */
-  const шапка=`<div class="row-head"><h3>План тренировок (неделя)</h3>
-    <div class="wrk-head-btns">
-      <button class="btn small" onclick="отправитьТренеру()">→ Отправить тренеру</button>
-      <button class="btn ghost small" onclick="openWrk()">+ Тип</button>
-    </div></div>
-    <div class="mini" style="margin:-4px 0 12px">Отчёт-страница с тренировками, питанием и метриками —
-      открывается двойным щелчком.
-      <button class="linkbtn" onclick="openShare()">выбрать разделы</button></div>`;
-
-  return шапка + план + wrkLogList();
-}
 
 /* Список записей дневника, сгруппированный по дням. */
-function wrkLogList(){
-  const записи=(state.workoutLog||[]).slice()
-    .sort((a,b)=> a.дата===b.дата ? 0 : (a.дата<b.дата?1:-1));
 
-  const заголовок=`<div class="row-head" style="margin-top:20px"><h3>Дневник тренировок</h3>
-    <button class="btn small" onclick="openWrkLog()">+ Тренировка</button></div>`;
-
-  if(!записи.length) return заголовок
-    + empty("Записей пока нет","Отметьте тренировку — что делали, сколько по времени и как прошло.");
-
-  const недельныйИтог=записиНедели().length;
-  let текущийДень=null;
-  const блоки=записи.slice(0,60).map(з=>{
-    const шапка = з.дата!==текущийДень
-      ? (текущийДень=з.дата, `<div class="wl-day">${(()=>{const d=parse(з.дата);
-          return d?`${fmt(d)} · ${["вс","пн","вт","ср","чт","пт","сб"][d.getDay()]}`:esc(з.дата);})()}</div>`)
-      : "";
-    return шапка + `<div class="wl-row">
-      <div class="wl-main">
-        <span class="wl-type">${esc(з.тип||"Тренировка")}</span>
-        ${з.минут?`<span class="wl-min">${з.минут} мин</span>`:""}
-        ${з.ощущение?`<span class="chip ex">${esc(з.ощущение)}</span>`:""}
-        ${з.что?`<div class="mini">${esc(з.что)}</div>`:""}
-      </div>
-      <div class="rowbtns">
-        <button class="iconbtn" onclick="openWrkLog('${з.id}')">Изм.</button>
-        <button class="iconbtn" onclick="delWrkLog('${з.id}')">Удал.</button></div></div>`;
-  }).join("");
-
-  return заголовок
-    + `<div class="mini" style="margin-bottom:8px">На этой неделе тренировок: <b>${недельныйИтог}</b></div>`
-    + `<div class="wl-list">${блоки}</div>`
-    + (записи.length>60?`<div class="mini" style="margin-top:8px">Показаны последние 60 записей из ${записи.length}.</div>`:"");
-}
-
-function openWrkLog(id, тип){
-  const e = id ? ((state.workoutLog||[]).find(x=>x.id===id)||{}) : {};
-  const типы=[...new Set([
-    ...state.workouts.map(w=>w.type),
-    ...(state.workoutLog||[]).map(з=>з.тип)
-  ].filter(Boolean))];
-  const выбран = e.тип || тип || типы[0] || "";
-
-  show(`<div class="modal-head"><h3>${id?"Изменить":"Новая"} тренировка</h3></div>
-  <div class="modal-body">
-    <div class="field"><label>Дата</label>
-      <input id="wl_date" type="date" value="${e.дата||iso(today)}"></div>
-    <div class="field"><label>Тип</label>
-      ${типы.length?`<select id="wl_type_sel" onchange="wrkTypeChanged()">
-        ${типы.map(т=>`<option value="${esc(т)}"${т===выбран?" selected":""}>${esc(т)}</option>`).join("")}
-        <option value="__свой"${типы.includes(выбран)?"":" selected"}>другое…</option>
-      </select>`:""}
-      <input id="wl_type" value="${esc(типы.includes(выбран)?"":выбран)}"
-        placeholder="Силовая" ${типы.length&&типы.includes(выбран)?'style="display:none"':""}></div>
-    <div class="field two">
-      <div><label>Сколько минут</label><input id="wl_min" type="number" min="0" step="5" value="${e.минут??""}"></div>
-      <div><label>Как прошло</label>
-        <select id="wl_feel">
-          <option value=""${!e.ощущение?" selected":""}>не указывать</option>
-          ${ОЩУЩЕНИЯ.map(о=>`<option value="${о}"${e.ощущение===о?" selected":""}>${о}</option>`).join("")}
-        </select></div></div>
-    <div id="wl_last" class="wl-prev"></div>
-    <div class="field"><label>Что делали</label>
-      <textarea id="wl_what" rows="2" placeholder="грудь/спина, 4 подхода">${esc(e.что||"")}</textarea></div>
-    <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
-      <button class="btn" onclick="saveWrkLog('${id||""}')">Сохранить</button></div></div>`);
-  показатьПрошлую(id);
-  const поле=document.getElementById("wl_type");
-  if(поле) поле.addEventListener("input", ()=>показатьПрошлую(id));
-}
 
 /* Выбор «другое…» открывает поле для своего названия. */
-function wrkTypeChanged(){
-  const sel=document.getElementById("wl_type_sel"), поле=document.getElementById("wl_type");
-  if(!sel||!поле) return;
-  const своё = sel.value==="__свой";
-  поле.style.display = своё ? "" : "none";
-  if(своё) поле.focus();
-  показатьПрошлую();
-}
 
 /* «В прошлый раз» по этому же типу. Владелец спросил: «буду видеть силовые
    тренировки по сплиту?» — без этого дневник был складом записей, из которого
    ничего не видно. Теперь при выборе типа сразу видно, когда и что делали
    в прошлый раз: не нужно листать историю, чтобы вспомнить. */
-function показатьПрошлую(id){
-  const где=document.getElementById("wl_last");
-  if(!где) return;
-  const sel=document.getElementById("wl_type_sel");
-  const тип=(sel&&sel.value!=="__свой") ? sel.value : (val("wl_type")||"");
-  if(!тип){ где.innerHTML=""; return; }
-
-  /* правим существующую запись — её саму в «прошлый раз» не берём */
-  const прошлые=(state.workoutLog||[])
-    .filter(з=>з.тип===тип && з.id!==id)
-    .sort((a,b)=>a.дата<b.дата?1:-1);
-  const п=прошлые[0];
-  if(!п){ где.innerHTML=`<div class="wl-prev-empty">По типу «${esc(тип)}» это будет первая запись.</div>`; return; }
-  const д=parse(п.дата);
-  const дней=д?daysBetween(today,д):null;
-  /* Кнопка «заполнить как тогда»: тренировки чаще всего повторяют предыдущую
-     того же типа, а план и так лежит в переписке с тренером. Переписывать его
-     в панель незачем — панель записывает факт, а не план. Одно касание вместо
-     трёх полей. */
-  где.innerHTML=`<div class="wl-prev-box"><span class="wl-prev-lbl">В прошлый раз</span>
-    <b>${д?fmt(д):esc(п.дата)}</b>${дней!==null&&дней>0?` · ${дней} ${склонение(дней,"день","дня","дней")} назад`:" · сегодня"}
-    ${п.минут?` · ${п.минут} мин`:""}${п.ощущение?` · ${esc(п.ощущение)}`:""}
-    ${п.что?`<div class="wl-prev-what">${esc(п.что)}</div>`:""}
-    <button class="btn ghost small" style="margin-top:8px"
-      onclick="заполнитьКакТогда('${п.id}')">Заполнить как тогда</button></div>`;
-}
 
 /* Переносим минуты, самочувствие и описание из прошлой тренировки. Дату не
    трогаем: она уже стоит сегодняшняя, и подменять её было бы неверно. */
-function заполнитьКакТогда(idПрошлой){
-  const п=(state.workoutLog||[]).find(з=>з.id===idПрошлой);
-  if(!п) return;
-  const пост=(поле,знач)=>{const el=document.getElementById(поле); if(el&&знач!=null) el.value=знач;};
-  пост("wl_min", п.минут??"");
-  пост("wl_what", п.что||"");
-  const f=document.getElementById("wl_feel");
-  if(f) f.value=п.ощущение||"";
-  const м=document.getElementById("wl_min");
-  if(м) м.focus();
-}
 
-async function saveWrkLog(id){
-  const sel=document.getElementById("wl_type_sel");
-  let тип = (sel && sel.value!=="__свой") ? sel.value : val("wl_type");
-  if(!тип) тип="Тренировка";
-  const дата=document.getElementById("wl_date").value || iso(today);
-  const о={id:id||u(), дата, тип,
-    минут: parseInt(document.getElementById("wl_min").value,10) || null,
-    ощущение: document.getElementById("wl_feel").value || "",
-    что: document.getElementById("wl_what").value.trim()};
-  if(!Array.isArray(state.workoutLog)) state.workoutLog=[];
-  const i=state.workoutLog.findIndex(x=>x.id===id);
-  if(i>=0) state.workoutLog[i]=о; else state.workoutLog.push(о);
-  await done();
-}
 
-async function delWrkLog(id){
-  if(!confirm("Удалить запись о тренировке?")) return;
-  state.workoutLog=(state.workoutLog||[]).filter(x=>x.id!==id);
-  await save(); renderAll();
-}
 function metricTable(){
   const m=state.metrics.slice().sort((a,b)=>b.date<a.date?-1:1);
   const rows=m.map((x,i)=>`<tr><td class="num" data-label="Дата">${fmt(parse(x.date))}</td>
@@ -1731,16 +1583,8 @@ async function saveDoc(id){const ex=id?state.doctors.find(x=>x.id===id):null;
     done:ex?ex.done:false,result:document.getElementById("f_result").value};
   upsert("doctors",o);await done();}
 
-function openWrk(w){const e=w||{};show(`<div class="modal-head"><h3>${w?"Изменить":"Новый"} тип тренировки</h3></div>
-  <div class="modal-body">
-    <div class="field"><label>Тип</label><input id="f_type" value="${e.type||""}" placeholder="Силовая"></div>
-    <div class="field"><label>Цель в неделю (раз)</label><input id="f_pw" type="number" min="1" value="${e.perWeek??3}"></div>
-    <div class="modal-foot"><button class="btn line" onclick="closeModal()">Отмена</button>
-      <button class="btn" onclick="saveWrk('${e.id||""}')">Сохранить</button></div></div>`);}
 /* doneThisWeek больше не хранится: выполненное за неделю считается из
    дневника тренировок, поэтому счётчику негде разойтись с фактом. */
-async function saveWrk(id){const o={id:id||u(),type:val("f_type")||"Тренировка",perWeek:numv("f_pw")||3};
-  upsert("workouts",o);await done();}
 
 function openMetric(){show(`<div class="modal-head"><h3>Запись параметров</h3></div>
   <div class="modal-body">
@@ -4546,12 +4390,23 @@ function отчётHTML(выбрано){
   const части=[];
 
   if(включено("тренировки")){
-    const план=state.workouts.map(w=>{
-      const с=сделаноЗаНеделю(w.type);
-      return `<tr><td>${esc(w.type)}</td><td class="n">${с} / ${w.perWeek}</td></tr>`;
+    /* Отчёт читает модуль тренировок напрямую: регулярность за три окна
+       вместо прежней таблицы недельных целей, которых больше нет. */
+    const план=[7,30,90].map(д=>{
+      const в=процентВыполнения(д);
+      return `<tr><td>за ${д} ${склонение(д,"день","дня","дней")}</td>
+        <td class="n">${в?в.процент+" %":"нет данных"}</td>
+        <td class="n">${в?`${в.сделано} из ${в.сделано+в.пропущено}`:"—"}</td></tr>`;
     }).join("");
 
-    const записи=(state.workoutLog||[]).slice().sort((a,b)=>a.дата<b.дата?1:-1).slice(0,60);
+    const записи=живые(state.trainSessions).slice()
+      .sort((a,b)=>a.датаВремя<b.датаВремя?1:-1).slice(0,60)
+      .map(с=>({дата:(с.датаВремя||"").slice(0,10), тип:с.типПодпись||с.тип,
+        минут:с.минут, rpe:с.rpe, что:с.комментарий||"",
+        упражнения:упражненияЗанятия(с.id).map(з=>{
+          const у=упражнениеПоId(з.exerciseId);
+          return `${у?у.название:"—"} ${з.подходы}×${з.повторения}${з.вес!=null?" · "+з.вес+" кг":""}`;
+        }).join("; ")}));
     let день=null;
     const дневник=записи.map(з=>{
       const шапка = з.дата!==день ? (день=з.дата,
@@ -4559,16 +4414,17 @@ function отчётHTML(выбрано){
           return d?`${fmt(d)} · ${["вс","пн","вт","ср","чт","пт","сб"][d.getDay()]}`:esc(з.дата);})()}</td></tr>`) : "";
       return шапка+`<tr><td><b>${esc(з.тип||"Тренировка")}</b></td>
         <td class="n">${з.минут?з.минут+" мин":"—"}</td>
-        <td>${esc(з.ощущение||"")}</td>
-        <td>${esc(з.что||"")}</td></tr>`;
+        <td class="n">${з.rpe?"RPE "+з.rpe:"—"}</td>
+        <td>${esc(з.упражнения||з.что||"")}</td></tr>`;
     }).join("");
 
     части.push(`<section><h2>Тренировки</h2>
-      ${план?`<p class="lead">План на неделю и выполнено за текущую неделю</p>
-        <table><thead><tr><th>Тип</th><th>За неделю</th></tr></thead><tbody>${план}</tbody></table>`:""}
+      <p class="lead">Выполнение плана. Отменённые тренировки в расчёт не входят.</p>
+      <table><thead><tr><th>Период</th><th>Выполнено</th><th>Занятий</th></tr></thead>
+        <tbody>${план}</tbody></table>
       <h3>Дневник${записи.length?` · записей: ${записи.length}`:""}</h3>
       ${записи.length
-        ? `<table><thead><tr><th>Тренировка</th><th>Время</th><th>Как прошло</th><th>Что делали</th></tr></thead>
+        ? `<table><thead><tr><th>Тренировка</th><th>Время</th><th>RPE</th><th>Упражнения</th></tr></thead>
            <tbody>${дневник}</tbody></table>`
         : `<p class="empty">Записей нет.</p>`}
       </section>`);
@@ -4817,7 +4673,9 @@ function renderAll(){
   renderPartialNote();
   renderStorageNote();
   if(view==="today"){
-    renderIntake(); renderTodayProgress(); renderTodayWorkout(); renderTodayGoals(); renderTodayNote();
+    renderIntake(); renderTodayProgress(); renderTodayGoals(); renderTodayNote();
+  } else if(view==="training"){
+    renderРегулярность(); renderДинамикаСилы(); renderЗамеры(); renderНагрузка(); renderОбмен();
   } else {
     renderAttention(); renderMetrics(); renderCalendar(); renderTabs(); renderTabBody();
     renderGoals(); renderFTabs(); renderFTabBody();
@@ -4843,39 +4701,6 @@ function склонение(n, один, два, много){
    полная», «заказать, контроль, общий анализ крови — не знаю, чем с этим
    делать». Он прав: это не его задачи. */
 
-function renderTodayWorkout(){
-  const el=document.getElementById("todayWorkout");
-  if(!el) return;
-
-  const заПериод=записиНедели();
-  const план=state.workouts.map(w=>{
-    const сделано=сделаноЗаНеделю(w.type);
-    const готово=сделано>=w.perWeek;
-    return `<div class="tw-row${готово?" done":""}">
-      <span class="tw-type">${esc(w.type)}</span>
-      <span class="tw-count">${сделано} / ${w.perWeek}</span>
-      <span class="tw-bar"><i style="width:${w.perWeek>0?Math.min(100,(сделано/w.perWeek)*100):0}%"></i></span>
-    </div>`;
-  }).join("");
-
-  const последние=(state.workoutLog||[]).slice()
-    .sort((a,b)=>a.дата<b.дата?1:-1).slice(0,3).map(з=>{
-      const d=parse(з.дата);
-      return `<div class="tw-last"><span>${d?fmt(d):esc(з.дата)}</span>
-        <b>${esc(з.тип)}</b>${з.минут?` · ${з.минут} мин`:""}${
-        з.ощущение?` <span class="chip ex">${esc(з.ощущение)}</span>`:""}</div>`;
-    }).join("");
-
-  el.className="panel";
-  el.innerHTML=`<div class="panel-head"><h2>Тренировки</h2>
-      <button class="btn small" onclick="openWrkLog()">+ Тренировка</button></div>
-    <div class="panel-body">
-      ${план||`<div class="mini">Типы тренировок и цели на неделю ставит тренер — они появятся здесь.</div>`}
-      ${заПериод.length?`<div class="tw-week">На этой неделе: <b>${заПериод.length}</b></div>`:""}
-      ${последние?`<div class="tw-lasts">${последние}</div>`:""}
-      <button class="btn ghost small" style="margin-top:10px" onclick="отправитьТренеру()">→ Отправить тренеру</button>
-    </div>`;
-}
 
 /* Цели: только отметить сделанное. Создавать их здесь нельзя — их ставит
    тренер, и владелец сам сказал, что это не его дело. */
@@ -4912,6 +4737,741 @@ function renderTodayNote(){
        <button class="linkbtn" onclick="setView('archive')">Архив и учёт</button>`;
 }
 
+/* ================= МОДУЛЬ «ТРЕНИРОВКИ» · модель данных =================
+
+   Пять сущностей по ТЗ. Держим плоскими массивами в state — так же, как
+   labs, doctors, vitamins: это принятый в панели способ, отдельного слоя
+   доступа здесь нет и вводить его незачем.
+
+   Чего в этой модели НЕТ и почему: сервера, ролей и достоверного аудита.
+   Панель — один файл в браузере, поэтому created_by записывается, но
+   доверять ему нельзя: файл правится у себя, поле подделывается. Удаление
+   мягкое (удалён:true) — «редактирование не перезаписывает историю молча»
+   выполняется в той мере, в какой это возможно без сервера.
+
+   TrainingPlan   → state.trainPlans     запланированная тренировка
+   TrainingSession→ state.trainSessions  фактически проведённое занятие
+   ExerciseEntry  → state.trainEntries   выполненное упражнение внутри занятия
+   Exercise       → state.exercises      справочник упражнений
+   Measurement    → state.measurements   контрольные замеры
+
+   Про «занятий в неделю: факт против плана» из ТЗ: план берётся из
+   TrainingPlan за окно, а не из отдельной нормы. Прежняя state.trainTargets
+   («Силовая: 4 в неделю») удалена — держать две сущности с одним смыслом
+   значит расходиться в цифрах. */
+
+const ТИПЫ_ЗАНЯТИЙ=["силовая","кардио","мобильность","другое"];
+const СТАТУСЫ_ПЛАНА=["planned","done","skipped","cancelled"];
+
+/* Типы метрик расширяемы без миграции: тренер добавляет свою строкой.
+   Базовый набор — из ТЗ. */
+const БАЗОВЫЕ_МЕТРИКИ=[
+  {тип:"вес", единица:"кг"},
+  {тип:"процент жира", единица:"%"},
+  {тип:"пульс покоя", единица:"уд/мин"},
+  {тип:"обхват груди", единица:"см"},
+  {тип:"обхват пояса", единица:"см"},
+  {тип:"обхват бедра", единица:"см"},
+];
+
+/* Стартовый справочник. Опорные (is_benchmark) — те, по которым принято
+   мерить силу; тренер может отметить свои. */
+function базовыеУпражнения(){
+  const у=(название,группа,benchmark)=>({id:u(),название,группа,
+    is_benchmark:!!benchmark, единица:"кг", создано:iso(today), удалён:false});
+  return [
+    у("Жим лёжа","грудь",true),
+    у("Приседания со штангой","ноги",true),
+    у("Тяга штанги в наклоне","спина",true),
+    у("Жим стоя","плечи",false),
+    у("Подтягивания","спина",false),
+    у("Становая тяга","спина",true),
+  ];
+}
+
+/* Общие поля всех записей модуля. Время создания честное, автор —
+   заявленный, не проверенный. */
+function служебные(автор){
+  return {создано:new Date().toISOString(), автор:автор||"панель",
+          изменено:null, удалён:false};
+}
+
+const живые=м=>(м||[]).filter(з=>!з.удалён);
+
+function упражнениеПоId(id){ return (state.exercises||[]).find(у=>у.id===id); }
+function занятияПлана(planId){ return живые(state.trainSessions).filter(с=>с.planId===planId); }
+function упражненияЗанятия(sessionId){ return живые(state.trainEntries).filter(з=>з.sessionId===sessionId); }
+
+/* Рабочий вес упражнения за занятие = максимум среди подходов.
+   Так задано в ТЗ, и это разумно: прогресс мерят по лучшему подходу. */
+function рабочийВес(sessionId, exerciseId){
+  const веса=упражненияЗанятия(sessionId)
+    .filter(з=>з.exerciseId===exerciseId && з.вес!=null)
+    .map(з=>+з.вес);
+  return веса.length ? Math.max.apply(null,веса) : null;
+}
+
+/* Совместимость со старыми экранами: они читали журнал в виде
+   {дата, тип, минут, ощущение, что}. Отдаём тот же вид из TrainingSession,
+   чтобы не держать две модели одновременно. Экраны заменяются на этапах
+   4–5, после чего эта прослойка уйдёт.
+   Поле «ощущение» не выдумываем: раньше это были слова «легко/нормально/
+   тяжело», а теперь RPE 1–10, и подменять одно другим нельзя. */
+
+/* ---------- миграция старой модели ----------
+
+   Что откуда:
+     state.workoutLog  → trainSessions (дата, тип, минуты, комментарий)
+     state.workouts    → отброшено: план теперь датирован (TrainingPlan)
+     state.body        → measurements (вес и обхваты, по строке на метрику)
+
+   RPE у старых записей остаётся пустым. Прежнее «легко/нормально/тяжело»
+   переводить в числа 1–10 значило бы придумать данные, которых человек
+   не вводил. Слова сохраняются в комментарии. */
+function миграцияТренировок(){
+  let ch=false;
+
+  if(!Array.isArray(state.exercises)){
+    state.exercises=базовыеУпражнения(); ch=true;
+  }
+  if(!Array.isArray(state.trainPlans)){ state.trainPlans=[]; ch=true; }
+  if(!Array.isArray(state.trainSessions)){ state.trainSessions=[]; ch=true; }
+  if(!Array.isArray(state.trainEntries)){ state.trainEntries=[]; ch=true; }
+  if(!Array.isArray(state.measurements)){ state.measurements=[]; ch=true; }
+  if(!Array.isArray(state.metricTypes)){
+    state.metricTypes=БАЗОВЫЕ_МЕТРИКИ.map(м=>({...м})); ch=true;
+  }
+
+  if(!state._migr_training){
+    /* Занятия из прежнего журнала. Читаем ИМЕННО старый массив, а не
+       прослойку журналЗанятий(): она отдаёт уже перенесённые занятия, и
+       миграция получила бы пустой список. Ошибка была допущена и найдена
+       проверкой: замеры и цели перенеслись, а занятия — нет. */
+    (state.workoutLog||[]).forEach(з=>{
+      const слова=[з.что,з.ощущение].filter(Boolean).join(" · ");
+      state.trainSessions.push({
+        id:з.id||u(), planId:null,
+        датаВремя:(з.дата||iso(today))+"T00:00:00",
+        тип:(ТИПЫ_ЗАНЯТИЙ.includes(String(з.тип||"").toLowerCase())
+              ? String(з.тип).toLowerCase() : "другое"),
+        типПодпись:з.тип||"Тренировка",
+        минут:з.минут??null, rpe:null,
+        комментарий:слова.slice(0,1000),
+        ...служебные("перенос из прежнего журнала")
+      });
+    });
+
+    /* замеры: одна строка на метрику, как требует Measurement */
+    (state.body||[]).forEach(з=>{
+      const пары=[["вес",з.вес,"кг"],["обхват груди",з.грудь,"см"],
+                  ["обхват пояса",з.пояс,"см"],["обхват бедра",з.бедро,"см"]];
+      пары.forEach(([тип,знач,ед])=>{
+        if(знач==null) return;
+        state.measurements.push({id:u(), дата:з.дата, тип, значение:+знач,
+          единица:ед, ...служебные("перенос из замеров тела")});
+      });
+    });
+
+    delete state.workoutLog; delete state.workouts; delete state.body;
+    delete state.trainTargets;
+    state._migr_training=true; ch=true;
+  }
+  return ch;
+}
+
+/* ================= МОДУЛЬ «ТРЕНИРОВКИ» · расчёты =================
+
+   Все окна считаются от ТЕКУЩЕЙ даты, а не от начала календарного периода:
+   так задано в ТЗ и так честнее — «за 7 дней» означает последние семь суток,
+   а не «с понедельника». */
+
+function планыЗаПериод(дней){
+  const край=addDays(today,-(дней-1));
+  return живые(state.trainPlans).filter(п=>{
+    const д=parse(п.дата);
+    return д && д>=край && д<=today;
+  });
+}
+function занятияЗаПериод(дней){
+  const край=addDays(today,-(дней-1));
+  return живые(state.trainSessions).filter(с=>{
+    const д=parse((с.датаВремя||"").slice(0,10));
+    return д && д>=край && д<=today;
+  });
+}
+
+/* Процент выполнения = done / (done + skipped).
+
+   Отменённые (cancelled) в знаменатель НЕ входят: тренер уехал или зал
+   закрылся — клиент к этому отношения не имеет, и метрика не должна его
+   за это наказывать. Так задано в ТЗ.
+
+   Если знаменатель нулевой, возвращаем null — «нет данных». Это не то же
+   самое, что 0%: ноль означает «планировали и не сделали», а null —
+   «не планировали». Смешивать их нельзя. */
+function процентВыполнения(дней){
+  const планы=планыЗаПериод(дней);
+  const done=планы.filter(п=>п.статус==="done").length;
+  const skipped=планы.filter(п=>п.статус==="skipped").length;
+  const знаменатель=done+skipped;
+  if(!знаменатель) return null;
+  return {процент:Math.round((done/знаменатель)*100),
+          сделано:done, пропущено:skipped,
+          отменено:планы.filter(п=>п.статус==="cancelled").length,
+          запланировано:планы.filter(п=>п.статус==="planned").length};
+}
+
+/* Занятий в неделю: факт против плана. План — количество запланированных
+   тренировок в окне без отменённых, приведённое к неделе. */
+function занятийВНеделю(дней){
+  const недель=дней/7;
+  const планы=планыЗаПериод(дней).filter(п=>п.статус!=="cancelled");
+  const факт=занятияЗаПериод(дней).length;
+  if(!планы.length && !факт) return null;
+  return {факт:Math.round((факт/недель)*10)/10,
+          план:Math.round((планы.length/недель)*10)/10};
+}
+
+/* Флаг разговора: показатель за 7 дней просел больше чем на 20% относительно
+   30-дневного. Это сигнал к разговору, а не оценка — так и подписываем. */
+function флагПадения(){
+  const с7=процентВыполнения(7), с30=процентВыполнения(30);
+  if(!с7 || !с30 || !с30.процент) return null;
+  const просадка=Math.round(((с30.процент-с7.процент)/с30.процент)*100);
+  return просадка>20 ? {просадка, за7:с7.процент, за30:с30.процент} : null;
+}
+
+/* Динамика силы по упражнению: рабочий вес по датам.
+   Рабочий вес за занятие = максимум среди подходов (ТЗ). */
+function динамикаСилы(exerciseId, дней){
+  const точки=[];
+  занятияЗаПериод(дней||365).slice()
+    .sort((a,b)=>a.датаВремя<b.датаВремя?-1:1)
+    .forEach(с=>{
+      const в=рабочийВес(с.id, exerciseId);
+      if(в!=null) точки.push({дата:(с.датаВремя||"").slice(0,10), вес:в});
+    });
+  return точки;
+}
+
+/* Опорные упражнения — те, по которым строится динамика силы.
+   Максимум три линии одновременно: больше на телефоне не читается. */
+function опорныеУпражнения(){
+  return живые(state.exercises).filter(у=>у.is_benchmark);
+}
+
+/* Средний RPE по неделям — видно накопление усталости.
+   Недели считаем назад от текущей даты по 7 суток, а не по календарю. */
+function rpeПоНеделям(недель){
+  const итог=[];
+  for(let i=недель-1;i>=0;i--){
+    const конец=addDays(today,-(i*7));
+    const начало=addDays(конец,-6);
+    const значения=живые(state.trainSessions).filter(с=>{
+      const д=parse((с.датаВремя||"").slice(0,10));
+      return д && д>=начало && д<=конец && с.rpe!=null;
+    }).map(с=>+с.rpe);
+    итог.push({до:iso(конец), занятий:значения.length,
+      среднее: значения.length
+        ? Math.round((значения.reduce((s,v)=>s+v,0)/значения.length)*10)/10
+        : null});
+  }
+  return итог;
+}
+
+/* Значения выбранной метрики за период — для блока контрольных замеров. */
+function метрикаЗаПериод(тип, дней){
+  const край=addDays(today,-(дней-1));
+  return живые(state.measurements)
+    .filter(м=>м.тип===тип)
+    .filter(м=>{ const д=parse(м.дата); return д && д>=край && д<=today; })
+    .sort((a,b)=>a.дата<b.дата?-1:1);
+}
+function типыМетрикСДанными(){
+  const есть=new Set(живые(state.measurements).map(м=>м.тип));
+  return (state.metricTypes||[]).filter(м=>есть.has(м.тип));
+}
+
+/* ================= ЭКРАН ПРОГРЕССА · четыре блока =================
+
+   Порядок и состав заданы ТЗ, ничего сверх этого не выводим. Клиент здесь
+   только читает: вносит тренер со своей страницы. */
+
+let замерМетрика=null;      /* выбранная метрика во блоке замеров */
+let выбраныОпорные=null;    /* выбранные упражнения, максимум три */
+
+/* ---------- 1. Регулярность ---------- */
+function renderРегулярность(){
+  const el=document.getElementById("trRegular");
+  if(!el) return;
+
+  const окна=[7,30,90].map(д=>({д, знач:процентВыполнения(д)}));
+  const есть=окна.some(о=>о.знач);
+
+  if(!есть){
+    el.className="panel";
+    el.innerHTML=`<div class="panel-head"><h2>Регулярность</h2></div>
+      <div class="panel-body">${пустоБлок(
+        "Нет данных",
+        "Процент выполнения считается по плановым тренировкам. Как только тренер "
+        +"запланирует занятия и отметит проведённые, здесь появятся цифры.")}</div>`;
+    return;
+  }
+
+  const вНеделю=занятийВНеделю(30);
+  const флаг=флагПадения();
+
+  el.className="panel";
+  el.innerHTML=`<div class="panel-head"><h2>Регулярность</h2>
+      <span class="mini">процент выполнения плана</span></div>
+    <div class="panel-body">
+      <div class="tr-grid">
+        ${окна.map(о=>`<div class="tr-cell">
+          <div class="tr-lbl">за ${о.д} ${склонение(о.д,"день","дня","дней")}</div>
+          ${о.знач
+            ? `<div class="tr-val">${о.знач.процент}<small>%</small></div>
+               <div class="tr-note">${о.знач.сделано} из ${о.знач.сделано+о.знач.пропущено}${
+                 о.знач.отменено?` · ${о.знач.отменено} отменено`:""}</div>`
+            : `<div class="tr-val muted">—</div><div class="tr-note">нет плановых</div>`}
+        </div>`).join("")}
+      </div>
+      ${вНеделю?`<div class="tr-week">Занятий в неделю: <b>${вНеделю.факт}</b>
+        против плана <b>${вНеделю.план}</b> <span class="mini">· за 30 дней</span></div>`:""}
+      ${флаг?`<div class="tr-flag"><b>Стоит обсудить с тренером.</b>
+        За последние 7 дней выполнение ${флаг.за7}% против ${флаг.за30}% за 30 дней —
+        просадка на ${флаг.просадка}%. Это сигнал к разговору, а не оценка.</div>`:""}
+      <div class="mini" style="margin-top:9px">Отменённые тренировки — когда не смог тренер
+        или закрыт зал — в расчёт не входят.</div>
+    </div>`;
+}
+
+/* ---------- 2. Динамика силы ---------- */
+function renderДинамикаСилы(){
+  const el=document.getElementById("trStrength");
+  if(!el) return;
+  const опорные=опорныеУпражнения();
+
+  const сДанными=опорные.filter(у=>динамикаСилы(у.id,365).length>0);
+
+  /* Пока человек не выбрал сам, показываем первые три с данными: больше трёх
+     линий на телефоне не читается, так и задано в ТЗ.
+     Важно: выбор НЕ запоминаем в переменную до первого нажатия. Иначе он
+     вычислялся один раз — на пустой базе — и оставался пустым навсегда:
+     данные появлялись, а график оставался без линий. Найдено проверкой. */
+  const показать = выбраныОпорные!==null
+    ? выбраныОпорные
+    : сДанными.slice(0,3).map(у=>у.id);
+  el.className="panel";
+
+  if(!сДанными.length){
+    el.innerHTML=`<div class="panel-head"><h2>Динамика силы</h2></div>
+      <div class="panel-body">${пустоБлок("Нет данных",
+        "График строится по опорным упражнениям — тем, что отмечены как показательные. "
+        +"Появится, когда тренер запишет хотя бы одно занятие с весом.")}</div>`;
+    return;
+  }
+
+  const линии=показать.map(id=>{
+    const у=упражнениеПоId(id);
+    const точки=динамикаСилы(id,365);
+    return {имя:у?у.название:"—", точки};
+  }).filter(л=>л.точки.length);
+
+  const выбор=сДанными.map(у=>{
+    const вкл=показать.includes(у.id);
+    return `<button class="seg-btn${вкл?" on":""}"
+      onclick="переключитьОпорное('${у.id}')">${esc(у.название)}</button>`;
+  }).join("");
+
+  el.innerHTML=`<div class="panel-head"><h2>Динамика силы</h2>
+      <span class="mini">рабочий вес, кг</span></div>
+    <div class="panel-body">
+      <div class="seg">${выбор}</div>
+      ${линии.length?многолинейный(линии)
+        :`<div class="mini">Выберите упражнение выше.</div>`}
+      ${линии.length?`<div class="tr-legend">${линии.map((л,i)=>
+        `<span class="tr-leg"><i class="tr-dot c${i}"></i>${esc(л.имя)}
+          <b>${л.точки[л.точки.length-1].вес} кг</b></span>`).join("")}</div>`:""}
+      <div class="mini" style="margin-top:8px">Рабочий вес за занятие — максимальный
+        среди подходов. Максимум три упражнения одновременно.</div>
+    </div>`;
+}
+
+function переключитьОпорное(id){
+  /* Первое нажатие материализует текущий показ: до него выбор вычисляется. */
+  if(выбраныОпорные===null){
+    выбраныОпорные=опорныеУпражнения()
+      .filter(у=>динамикаСилы(у.id,365).length>0).slice(0,3).map(у=>у.id);
+  }
+  const i=выбраныОпорные.indexOf(id);
+  if(i>=0) выбраныОпорные.splice(i,1);
+  else{
+    if(выбраныОпорные.length>=3){
+      alert("Максимум три упражнения одновременно — иначе график не читается.\n\n"
+        +"Снимите одно, чтобы добавить другое.");
+      return;
+    }
+    выбраныОпорные.push(id);
+  }
+  renderДинамикаСилы();
+}
+
+/* Несколько линий на одном поле. Механизм тот же, что у график(): SVG
+   строкой, без библиотек. Отдельная функция нужна потому, что график()
+   рисует одну линию, а здесь их до трёх с общим масштабом. */
+function многолинейный(линии){
+  const W=ширинаГрафика(), H=190;
+  const слева=44, справа=12, сверху=14, снизу=26;
+  const полеШ=W-слева-справа, полеВ=H-сверху-снизу;
+
+  const все=[].concat.apply([],линии.map(л=>л.точки.map(т=>т.вес)));
+  let низ=Math.min.apply(null,все), верх=Math.max.apply(null,все);
+  if(низ===верх){ низ-=2.5; верх+=2.5; }
+  const запас=(верх-низ)*0.12;
+  низ=Math.max(0,низ-запас); верх+=запас;
+
+  /* Ось X — по датам, общая для всех линий: иначе линии нельзя сравнивать. */
+  const даты=[...new Set([].concat.apply([],линии.map(л=>л.точки.map(т=>т.дата))))].sort();
+  const вX=дата=>слева+(даты.length<2?полеШ/2:(даты.indexOf(дата)/(даты.length-1))*полеШ);
+  const вY=v=>сверху+полеВ-((v-низ)/(верх-низ))*полеВ;
+
+  const ч=[];
+  [0,0.5,1].forEach(доля=>{
+    const v=низ+(верх-низ)*(1-доля), y=вY(v);
+    ч.push(`<line class="chart-grid" x1="${слева}" y1="${y.toFixed(1)}" x2="${W-справа}" y2="${y.toFixed(1)}"></line>`);
+    ч.push(`<text class="chart-tick" x="${слева-7}" y="${(y+3.5).toFixed(1)}" text-anchor="end">${округлить(v)}</text>`);
+  });
+
+  линии.forEach((л,i)=>{
+    const путь=л.точки.map((т,k)=>`${k?"L":"M"}${вX(т.дата).toFixed(1)},${вY(т.вес).toFixed(1)}`).join(" ");
+    ч.push(`<path class="tr-line c${i}" d="${путь}"></path>`);
+    /* Точки рисуем только когда их немного. На 90 днях выходило 31 кружок
+       на линию, они перекрывали саму линию, и график читался как пунктир. */
+    if(л.точки.length<=20) л.точки.forEach(т=>ч.push(`<circle class="tr-pt c${i}" cx="${вX(т.дата).toFixed(1)}"
+      cy="${вY(т.вес).toFixed(1)}" r="3.4"><title>${esc(л.имя)}: ${т.вес} кг · ${
+      (()=>{const d=parse(т.дата);return d?fmt(d):т.дата;})()}</title></circle>`));
+  });
+
+  /* Когда точек не видно, подсказку всё равно надо получить: кладём
+     прозрачные кружки поверх линии — они и ловят наведение. */
+  линии.forEach((л,i)=>{
+    if(л.точки.length<=20) return;
+    л.точки.forEach(т=>ч.push(`<circle cx="${вX(т.дата).toFixed(1)}"
+      cy="${вY(т.вес).toFixed(1)}" r="7" fill="transparent"
+      ><title>${esc(л.имя)}: ${т.вес} кг · ${
+      (()=>{const d=parse(т.дата);return d?fmt(d):т.дата;})()}</title></circle>`));
+  });
+
+  [0,Math.floor((даты.length-1)/2),даты.length-1].filter((v,i,a)=>a.indexOf(v)===i)
+    .forEach(i=>{
+      const d=parse(даты[i]);
+      const якорь=i===0?"start":(i===даты.length-1?"end":"middle");
+      ч.push(`<text class="chart-tick" x="${вX(даты[i]).toFixed(1)}" y="${H-8}"
+        text-anchor="${якорь}">${d?fmt(d):даты[i]}</text>`);
+    });
+
+  return `<div class="chart-wrap"><svg class="chart" viewBox="0 0 ${W} ${H}"
+    preserveAspectRatio="none" role="img">${ч.join("")}</svg></div>`;
+}
+
+/* ---------- 3. Контрольные замеры ---------- */
+function renderЗамеры(){
+  const el=document.getElementById("trMeasure");
+  if(!el) return;
+  const типы=типыМетрикСДанными();
+  el.className="panel";
+
+  if(!типы.length){
+    el.innerHTML=`<div class="panel-head"><h2>Контрольные замеры</h2></div>
+      <div class="panel-body">${пустоБлок("Нет данных",
+        "Замеры вносит тренер: вес, процент жира, пульс покоя, обхваты. "
+        +"Здесь появится график и таблица значений.")}</div>`;
+    return;
+  }
+
+  if(!замерМетрика || !типы.some(м=>м.тип===замерМетрика)) замерМетрика=типы[0].тип;
+  const строки=метрикаЗаПериод(замерМетрика,90);
+  const ед=(типы.find(м=>м.тип===замерМетрика)||{}).единица||"";
+
+  const точки=строки.map(м=>({подпись:(()=>{const d=parse(м.дата);return d?fmt(d):м.дата;})(),
+    значение:+м.значение}));
+
+  const таблица=строки.slice().reverse().map(м=>{
+    const d=parse(м.дата);
+    return `<tr><td class="num">${d?fmt(d):esc(м.дата)}</td>
+      <td class="num"><b>${м.значение}</b> ${esc(м.единица||"")}</td></tr>`;
+  }).join("");
+
+  el.innerHTML=`<div class="panel-head"><h2>Контрольные замеры</h2>
+      <span class="mini">за 90 дней</span></div>
+    <div class="panel-body">
+      <div class="seg">${типы.map(м=>`<button class="seg-btn${м.тип===замерМетрика?" on":""}"
+        onclick="выбратьМетрику('${esc(м.тип)}')">${esc(м.тип)}</button>`).join("")}</div>
+      ${точки.length>1?график({точки, вид:"линия", единицы:ед, высота:175})
+        :`<div class="mini" style="margin-bottom:10px">Для графика нужно хотя бы два замера.</div>`}
+      <table class="cards"><thead><tr><th>Дата</th><th>Значение</th></tr></thead>
+        <tbody>${таблица}</tbody></table>
+    </div>`;
+}
+function выбратьМетрику(тип){ замерМетрика=тип; renderЗамеры(); }
+
+/* ---------- 4. Нагрузка и самочувствие ---------- */
+function renderНагрузка(){
+  const el=document.getElementById("trLoad");
+  if(!el) return;
+  const недели=rpeПоНеделям(8).filter(н=>н.среднее!=null);
+  el.className="panel";
+
+  if(!недели.length){
+    el.innerHTML=`<div class="panel-head"><h2>Нагрузка и самочувствие</h2></div>
+      <div class="panel-body">${пустоБлок("Нет данных",
+        "RPE — субъективная нагрузка от 1 до 10, её отмечает тренер после занятия. "
+        +"По неделям будет видно накопление усталости.")}</div>`;
+    return;
+  }
+
+  const точки=недели.map(н=>({подпись:(()=>{const d=parse(н.до);return d?fmt(d):н.до;})(),
+    значение:н.среднее}));
+
+  el.innerHTML=`<div class="panel-head"><h2>Нагрузка и самочувствие</h2>
+      <span class="mini">средний RPE по неделям</span></div>
+    <div class="panel-body">
+      ${точки.length>1?график({точки, вид:"столбики", единицы:"RPE", высота:165})
+        :`<div class="tr-single">Средний RPE за неделю: <b>${точки[0].значение}</b></div>`}
+      <div class="mini">RPE 1 — очень легко, 10 — предел. Растущий тренд означает
+        накопление усталости; что с этим делать, решают клиент и тренер.</div>
+    </div>`;
+}
+
+function пустоБлок(заголовок, пояснение){
+  return `<div class="tr-empty"><b>${esc(заголовок)}</b>${esc(пояснение)}</div>`;
+}
+
+/* ---------- обмен с тренером (служебный блок) ---------- */
+function renderОбмен(){
+  const el=document.getElementById("trExchange");
+  if(!el) return;
+  const занятий=живые(state.trainSessions).length;
+  const планов=живые(state.trainPlans).length;
+  el.className="today-note";
+  el.innerHTML=`Данные вносит тренер со своей страницы.
+    Сейчас в панели: занятий ${занятий}, плановых тренировок ${планов}.
+    <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn ghost small" onclick="отдатьТренеру()">→ Файл для тренера</button>
+      <button class="btn ghost small" onclick="document.getElementById('trainerIn').click()">← Принять от тренера</button>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn line small" onclick="наполнитьДемо()">Наполнить демо-данными</button>
+      ${естьДемо()?`<button class="btn line small" onclick="убратьДемо()">Убрать демо-данные</button>`:""}
+    </div>
+    ${естьДемо()?`<div class="mini" style="margin-top:7px;color:var(--attn)">
+      Сейчас показаны демонстрационные данные за 90 дней.</div>`:""}`;
+}
+
+/* ================= демонстрационные данные =================
+
+   Зачем. Графики нельзя проверить на пустой базе, а тренеру нужно показать
+   работающий экран до того, как он начнёт вносить настоящее. Поэтому здесь
+   генератор на 90 дней.
+
+   Все записи помечены автором «демо». Это не украшение: убрать их можно
+   выборочно, не тронув настоящие — иначе кнопка очистки была бы опасной.
+
+   Никаких медицинских данных генератор не создаёт: только тренировки
+   и замеры тела. */
+
+const ДЕМО_АВТОР="демо";
+
+function естьДемо(){
+  return [state.trainPlans,state.trainSessions,state.trainEntries,state.measurements]
+    .some(м=>(м||[]).some(з=>з.автор===ДЕМО_АВТОР));
+}
+function естьНастоящие(){
+  return [state.trainPlans,state.trainSessions,state.trainEntries]
+    .some(м=>живые(м).some(з=>з.автор!==ДЕМО_АВТОР));
+}
+
+async function наполнитьДемо(){
+  if(естьНастоящие()){
+    if(!confirm("В панели уже есть настоящие тренировки.\n\n"
+      +"Демонстрационные добавятся рядом и будут помечены — убрать их потом можно "
+      +"отдельно, настоящие не тронутся. Продолжить?")) return;
+  }
+  if(естьДемо()){
+    if(!confirm("Демонстрационные данные уже есть. Заменить их новыми?")) return;
+    убратьДемоМолча();
+  }
+
+  const служ=()=>({создано:new Date().toISOString(), автор:ДЕМО_АВТОР,
+                   изменено:null, удалён:false});
+
+  /* Три опорных упражнения — по ним и строится динамика силы. */
+  const опорные=опорныеУпражнения().slice(0,3);
+  if(опорные.length<3){
+    alert("В справочнике меньше трёх опорных упражнений — демонстрация силы будет неполной.");
+  }
+  let веса=опорные.map((_,i)=>[70,90,60][i]||50);
+
+  let планов=0, занятий=0, записей=0, замеров=0;
+
+  for(let d=90; d>=0; d--){
+    const дата=iso(addDays(today,-d));
+    const дн=parse(дата).getDay();
+    if(![1,3,5].includes(дн)) continue;              /* пн, ср, пт */
+
+    /* Расклад статусов: примерно 80 / 13 / 7. Считаем от номера дня, а не
+       случайно: при случайности каждый показ давал бы другие цифры, и
+       проверить расчёты было бы нельзя. */
+    const r=(d*37)%100;
+    const статус = r<80 ? "done" : (r<93 ? "skipped" : "cancelled");
+
+    const pid=u();
+    state.trainPlans.push({id:pid, дата, тип:"силовая", планМинут:60,
+      планУпражнений:опорные.map(у=>({exerciseId:у.id, подходы:3, повторения:8})),
+      статус,
+      причина: статус==="cancelled" ? "зал закрыт"
+             : статус==="skipped" ? "клиент отменил" : null,
+      ...служ()});
+    планов++;
+    if(статус!=="done") continue;
+
+    const sid=u();
+    state.trainSessions.push({id:sid, planId:pid, датаВремя:дата+"T10:00:00",
+      тип:"силовая", типПодпись:"Силовая",
+      минут:55+((d*7)%20), rpe:5+((d*3)%5), комментарий:"", ...служ()});
+    занятий++;
+
+    /* Прогрессия: раз в десять дней добавляем вес — так это и выглядит
+       в жизни, а на графике видно ступеньки. */
+    if(d%10===0) веса=веса.map((в,i)=>в+(i===1?5:2.5));
+    опорные.forEach((у,i)=>{
+      state.trainEntries.push({id:u(), sessionId:sid, exerciseId:у.id,
+        подходы:3, повторения:8, вес:веса[i], заметка:"", ...служ()});
+      записей++;
+    });
+  }
+
+  /* Тренировка на сегодня со статусом planned. Без неё у тренера экран
+     «Сегодня» пустой: демо-план идёт по пн/ср/пт, а показывают в любой день.
+     А показать надо именно ввод — это главное, что он должен попробовать. */
+  if(!живые(state.trainPlans).some(п=>п.дата===iso(today) && п.статус==="planned")){
+    state.trainPlans.push({id:u(), дата:iso(today), тип:"силовая", планМинут:60,
+      планУпражнений:опорные.map(у=>({exerciseId:у.id, подходы:3, повторения:8})),
+      статус:"planned", причина:null, ...служ()});
+    планов++;
+  }
+
+  /* Замеры раз в неделю: вес и процент жира. */
+  let вес=86, жир=22;
+  for(let d=90; d>=0; d-=7){
+    вес=Math.round((вес-0.35)*10)/10;
+    жир=Math.round((жир-0.12)*10)/10;
+    const дата=iso(addDays(today,-d));
+    state.measurements.push({id:u(), дата, тип:"вес", значение:вес, единица:"кг", ...служ()});
+    state.measurements.push({id:u(), дата, тип:"процент жира", значение:жир, единица:"%", ...служ()});
+    замеров+=2;
+  }
+
+  выбраныОпорные=null; замерМетрика=null;
+  await save(); renderAll();
+  alert(`Демонстрационные данные за 90 дней созданы.\n\n`
+    +`Плановых тренировок: ${планов}\nПроведённых занятий: ${занятий}\n`
+    +`Записей упражнений: ${записей}\nЗамеров: ${замеров}\n\n`
+    +`Все помечены как демонстрационные — убрать их можно отдельной кнопкой.`);
+}
+
+function убратьДемоМолча(){
+  const чисто=м=>(м||[]).filter(з=>з.автор!==ДЕМО_АВТОР);
+  state.trainPlans=чисто(state.trainPlans);
+  state.trainSessions=чисто(state.trainSessions);
+  state.trainEntries=чисто(state.trainEntries);
+  state.measurements=чисто(state.measurements);
+}
+
+async function убратьДемо(){
+  if(!естьДемо()){ alert("Демонстрационных данных нет."); return; }
+  if(!confirm("Убрать демонстрационные данные?\n\nНастоящие записи останутся — "
+    +"удаляются только помеченные как демонстрационные.")) return;
+  const было=state.trainSessions.length;
+  убратьДемоМолча();
+  выбраныОпорные=null; замерМетрика=null;
+  await save(); renderAll();
+  alert(`Убрано демонстрационных занятий: ${было-state.trainSessions.length}.`);
+}
+
+/* ================= обмен файлами с тренером ================= */
+
+/* Отдать тренеру: план, справочник и история занятий. Медицинского не
+   кладём — файл уходит внешнему человеку. Тот же принцип, что в отчёте. */
+function файлДляТренера(){
+  return {формат:"family-office/training", версия:1, назначение:"для тренера",
+    клиент:"", выгружено:new Date().toISOString(),
+    данные:{
+      exercises:state.exercises, trainPlans:state.trainPlans,
+      trainSessions:state.trainSessions, trainEntries:state.trainEntries,
+      measurements:state.measurements}};
+}
+
+function отдатьТренеру(){
+  const blob=new Blob([JSON.stringify(файлДляТренера(),null,2)],
+    {type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`для-тренера-${iso(new Date())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  show(`<div class="modal-head"><h3>Файл для тренера готов</h3></div>
+  <div class="modal-body">
+    <div class="hint" style="margin-top:0">Отправьте этот файл тренеру вместе со ссылкой
+      на страницу ввода. Он загружает его кнопкой «Данные», вносит занятия и присылает
+      файл обратно — вы загружаете его здесь же.</div>
+    <div class="mini">В файле только тренировки: план, упражнения, занятия и замеры.
+      Анализов, врачей и препаратов в нём нет.</div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Понятно</button></div>
+  </div>`);
+}
+
+/* Принять от тренера. Сливаем по id: то, что уже есть, обновляем, новое
+   добавляем. Своё не теряем — тренер мог работать со старым файлом. */
+async function принятьОтТренера(input){
+  const f=input.files&&input.files[0];
+  input.value="";
+  if(!f) return;
+  let payload;
+  try{ payload=JSON.parse(await f.text()); }
+  catch(e){ alert("Это не файл тренировок: внутри не читается JSON."); return; }
+
+  const д=payload && (payload.данные||payload);
+  if(!д || !Array.isArray(д.trainSessions)){
+    alert("Не похоже на файл от тренера: нет списка занятий.");
+    return;
+  }
+
+  const слить=(куда, откуда)=>{
+    let новых=0, обновлено=0;
+    (откуда||[]).forEach(з=>{
+      const i=куда.findIndex(x=>x.id===з.id);
+      if(i>=0){ куда[i]=з; обновлено++; } else { куда.push(з); новых++; }
+    });
+    return {новых, обновлено};
+  };
+
+  const итог={
+    упражнения:слить(state.exercises, д.exercises),
+    планы:слить(state.trainPlans, д.trainPlans),
+    занятия:слить(state.trainSessions, д.trainSessions),
+    записи:слить(state.trainEntries, д.trainEntries),
+    замеры:слить(state.measurements, д.measurements),
+  };
+
+  await save(); renderAll();
+  alert("Загружено от тренера:\n"
+    +`занятий — новых ${итог.занятия.новых}, обновлено ${итог.занятия.обновлено}\n`
+    +`упражнений в занятиях — новых ${итог.записи.новых}\n`
+    +`планов — новых ${итог.планы.новых}, обновлено ${итог.планы.обновлено}\n`
+    +`замеров — новых ${итог.замеры.новых}`);
+}
+
 /* ---------- вес и обхваты ----------
 
    Зачем отдельно от метрик Whoop: те приходят выгрузкой каждую ночь, а вес
@@ -4923,8 +5483,21 @@ function renderTodayNote(){
 
 const ОБХВАТЫ=[{k:"грудь",имя:"Грудь"},{k:"пояс",имя:"Пояс"},{k:"бедро",имя:"Бедро"}];
 
+/* Measurement хранит по строке на метрику, а экран замеров показывает по
+   строке на дату. Собираем вид из модели, а не держим вторую копию данных.
+   id строки — это дата: устойчиво и не требует лишней сущности. */
+const МЕТРИКА_ПОЛЕ={"вес":"вес","обхват груди":"грудь",
+                     "обхват пояса":"пояс","обхват бедра":"бедро"};
+
 function замерыТела(){
-  return (state.body||[]).slice().sort((a,b)=>a.дата<b.дата?1:-1);
+  const поДатам={};
+  живые(state.measurements).forEach(м=>{
+    const поле=МЕТРИКА_ПОЛЕ[м.тип];
+    if(!поле) return;                      // прочие метрики — не в этом экране
+    if(!поДатам[м.дата]) поДатам[м.дата]={id:м.дата, дата:м.дата};
+    поДатам[м.дата][поле]=м.значение;
+  });
+  return Object.values(поДатам).sort((a,b)=>a.дата<b.дата?1:-1);
 }
 
 /* Вес сейчас и сдвиг за период. Берём ближайший замер не новее границы:
@@ -4969,18 +5542,27 @@ async function saveBody(id){
   const чис=пол=>{const v=parseFloat(document.getElementById("bd_"+пол).value);return isNaN(v)?null:v;};
   const вес=чис("w");
   if(вес===null){ alert("Укажите вес — без него замер не с чем сравнивать."); return; }
-  const о={id:id||u(), дата, вес};
-  ОБХВАТЫ.forEach(х=>{ const v=чис(х.k); if(v!==null) о[х.k]=v; });
-  if(!Array.isArray(state.body)) state.body=[];
-  /* один замер на дату: второе взвешивание в тот же день заменяет первое */
-  state.body=state.body.filter(з=>з.id!==id && з.дата!==дата);
-  state.body.push(о);
+  /* Пишем в Measurement: по строке на метрику. Один замер на дату —
+     прежние значения этой даты помечаем удалёнными, а не вырезаем. */
+  const поле_тип={вес:"вес", грудь:"обхват груди", пояс:"обхват пояса", бедро:"обхват бедра"};
+  живые(state.measurements)
+    .filter(м=>м.дата===дата && МЕТРИКА_ПОЛЕ[м.тип])
+    .forEach(м=>{ м.удалён=true; м.изменено=new Date().toISOString(); });
+
+  const добавить=(тип,знач,ед)=>{ if(знач==null) return;
+    state.measurements.push({id:u(), дата, тип, значение:знач, единица:ед,
+      ...служебные("клиент")}); };
+  добавить("вес",вес,"кг");
+  ОБХВАТЫ.forEach(х=>добавить(поле_тип[х.k], чис(х.k), "см"));
   await done();
 }
 
 async function delBody(id){
   if(!confirm("Удалить замер?")) return;
-  state.body=(state.body||[]).filter(з=>з.id!==id);
+  /* id строки — дата; помечаем удалёнными все метрики этого дня */
+  живые(state.measurements)
+    .filter(м=>м.дата===id && МЕТРИКА_ПОЛЕ[м.тип])
+    .forEach(м=>{ м.удалён=true; м.изменено=new Date().toISOString(); });
   await save(); renderAll();
 }
 
@@ -5082,10 +5664,10 @@ function renderTodayProgress(){
       сдвиг:с.сдвиг, дней:с.дней});
   });
 
-  const заМесяц=(state.workoutLog||[]).filter(з=>{
-    const д=parse(з.дата); return д&&д>=addDays(today,-27)&&д<=today;
-  }).length;
-  const планМесяц=state.workouts.reduce((s,w)=>s+(+w.perWeek||0),0)*4;
+  /* Считаем прямо по модулю тренировок: занятия за 4 недели против
+     плановых тренировок за тот же период (без отменённых). */
+  const заМесяц=занятияЗаПериод(28).length;
+  const планМесяц=планыЗаПериод(28).filter(п=>п.статус!=="cancelled").length;
   if(планМесяц||заМесяц) плитки.push({
     подпись:"Тренировок за 4 недели",
     значение:заМесяц, единица:планМесяц?"из "+планМесяц:""});
