@@ -1542,10 +1542,30 @@ function показатьПрошлую(id){
   if(!п){ где.innerHTML=`<div class="wl-prev-empty">По типу «${esc(тип)}» это будет первая запись.</div>`; return; }
   const д=parse(п.дата);
   const дней=д?daysBetween(today,д):null;
+  /* Кнопка «заполнить как тогда»: тренировки чаще всего повторяют предыдущую
+     того же типа, а план и так лежит в переписке с тренером. Переписывать его
+     в панель незачем — панель записывает факт, а не план. Одно касание вместо
+     трёх полей. */
   где.innerHTML=`<div class="wl-prev-box"><span class="wl-prev-lbl">В прошлый раз</span>
     <b>${д?fmt(д):esc(п.дата)}</b>${дней!==null&&дней>0?` · ${дней} ${склонение(дней,"день","дня","дней")} назад`:" · сегодня"}
     ${п.минут?` · ${п.минут} мин`:""}${п.ощущение?` · ${esc(п.ощущение)}`:""}
-    ${п.что?`<div class="wl-prev-what">${esc(п.что)}</div>`:""}</div>`;
+    ${п.что?`<div class="wl-prev-what">${esc(п.что)}</div>`:""}
+    <button class="btn ghost small" style="margin-top:8px"
+      onclick="заполнитьКакТогда('${п.id}')">Заполнить как тогда</button></div>`;
+}
+
+/* Переносим минуты, самочувствие и описание из прошлой тренировки. Дату не
+   трогаем: она уже стоит сегодняшняя, и подменять её было бы неверно. */
+function заполнитьКакТогда(idПрошлой){
+  const п=(state.workoutLog||[]).find(з=>з.id===idПрошлой);
+  if(!п) return;
+  const пост=(поле,знач)=>{const el=document.getElementById(поле); if(el&&знач!=null) el.value=знач;};
+  пост("wl_min", п.минут??"");
+  пост("wl_what", п.что||"");
+  const f=document.getElementById("wl_feel");
+  if(f) f.value=п.ощущение||"";
+  const м=document.getElementById("wl_min");
+  if(м) м.focus();
 }
 
 async function saveWrkLog(id){
